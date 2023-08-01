@@ -29,7 +29,7 @@ import type {
   CommitUser,
   Issue,
   Label,
-  PR,
+  PullRequest,
   Repo,
   RepoContents,
   User,
@@ -69,7 +69,7 @@ describe('modules/platform/gitea/index', () => {
     },
   });
 
-  type MockPr = PR & Required<Pick<PR, 'head' | 'base'>>;
+  type MockPr = PullRequest & Required<Pick<PullRequest, 'head' | 'base'>>;
 
   const mockRepos: Repo[] = [
     partial<Repo>({ full_name: 'a/b' }),
@@ -786,7 +786,7 @@ describe('modules/platform/gitea/index', () => {
       await initFakeRepo();
 
       helper.searchPRs.mockResolvedValueOnce([
-        partial<PR>({
+        partial<PullRequest>({
           number: 3,
           title: 'Third-party PR',
           body: 'other random pull request',
@@ -1112,7 +1112,7 @@ describe('modules/platform/gitea/index', () => {
     });
 
     it('should abort when response for created pull request is invalid', async () => {
-      helper.createPR.mockResolvedValueOnce(partial<PR>());
+      helper.createPR.mockResolvedValueOnce(partial<PullRequest>());
 
       await initFakeRepo();
       await expect(

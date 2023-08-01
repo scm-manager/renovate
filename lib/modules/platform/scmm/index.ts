@@ -29,12 +29,13 @@ import * as helper from './scmm-client';
 import { ScmmClient } from './scmm-client';
 import type { PRMergeMethod, PRUpdateParams, Repo } from './types';
 import { getRepoUrl, smartLinks, trimTrailingApiPath } from './utils';
+import { mapPrFromScmToRenovate } from './mapper';
 
 interface SCMMRepoConfig {
   repository: string;
   mergeMethod: PRMergeMethod;
 
-  prList: Promise<Pr[]> | null;
+  prList: Pr[] | null;
   defaultBranch: string;
 }
 
@@ -55,6 +56,7 @@ const defaultOptions = {
   headers: { Accept: '*', 'X-Scm-Client': 'WUI' },
 };
 
+let config: SCMMRepoConfig = {} as any;
 let scmmClient: ScmmClient | undefined = undefined;
 
 export async function initPlatform({
@@ -97,7 +99,7 @@ export async function initRepo({
   const repo = await scmmClient.getRepo(repository);
   const url = getRepoUrl(repo, gitUrl, scmmClient.getEndpoint());
 
-  const config: SCMMRepoConfig = {} as any;
+  config = {} as any;
   config.repository = repository;
   await git.initRepo({
     ...config,
@@ -110,12 +112,90 @@ export async function initRepo({
   const result = {
     defaultBranch: config.defaultBranch,
     isFork: false,
-    repoFingerprint: repoFingerprint(repo.id, scmmClient.getEndpoint()),
+    repoFingerprint: repoFingerprint(
+      config.repository,
+      scmmClient.getEndpoint()
+    ),
   };
 
   logger.info(`Repo initialized: ${JSON.stringify(result)}`);
 
   return result;
+}
+
+export async function findPr({
+  branchName,
+  prTitle: title,
+  state = 'all',
+}: FindPRConfig): Promise<Pr | null> {
+  console.log(branchName);
+  console.log(title);
+  console.log(state);
+
+  /*logger.debug(`findPr(${branchName}, ${title!}, ${state})`);
+  const prList = await platform.getPrList();
+  const pr = prList.find(
+    (p) =>
+      p.sourceRepo === config.repository &&
+      p.sourceBranch === branchName &&
+      (!title || p.title === title)
+  );
+
+  if (pr) {
+    logger.debug(`Found PR #${pr.number}`);
+  }
+  return pr ?? null;*/
+
+  return null;
+}
+
+export async function getPr(number: number): Promise<Pr | null> {
+  /*// Search for pull request in cached list or attempt to query directly
+  const prList = await platform.getPrList();
+  let pr = prList.find((p) => p.number === number) ?? null;
+  if (pr) {
+    logger.debug('Returning from cached PRs');
+  } else {
+    logger.debug('PR not found in cached PRs - trying to fetch directly');
+    const gpr = await helper.getPR(config.repository, number, defaultOptions);
+    pr = {
+      number: gpr.number,
+      sourceBranch: gpr.source,
+      targetBranch: gpr.target,
+      title: gpr.title,
+      state: gpr.status,
+    };
+
+    // Add pull request to cache for further lookups / queries
+    if (config.prList !== null) {
+      (await config.prList).push(pr!);
+    }
+  }
+
+  // Abort and return null if no match was found
+  if (!pr) {
+    return null;
+  }
+
+  return pr;*/
+
+  return null;
+}
+
+export async function getPrList(): Promise<Pr[]> {
+  if (!scmmClient) {
+    throw new Error(
+      'Init Repo: You must init the plattform first, because client is undefined'
+    );
+  }
+
+  if (config.prList === null) {
+    config.prList = (
+      await scmmClient.getAllRepoPrsInProgress(config.repository)
+    ).map((pr) => mapPrFromScmToRenovate(pr));
+  }
+
+  return config.prList || [];
 }
 
 /*const platform: Platform = {
@@ -213,64 +293,11 @@ async getRawFile(
     // Nothing
   },
 
-  getPrList(): Promise<Pr[]> {
-    if (config.prList === null) {
-      config.prList = helper.searchPRs(config.repository, defaultOptions);
-    }
+  ,
 
-    return config.prList;
-  },
+  ,
 
-  async getPr(number: number): Promise<Pr | null> {
-    // Search for pull request in cached list or attempt to query directly
-    const prList = await platform.getPrList();
-    let pr = prList.find((p) => p.number === number) ?? null;
-    if (pr) {
-      logger.debug('Returning from cached PRs');
-    } else {
-      logger.debug('PR not found in cached PRs - trying to fetch directly');
-      const gpr = await helper.getPR(config.repository, number, defaultOptions);
-      pr = {
-        number: gpr.number,
-        sourceBranch: gpr.source,
-        targetBranch: gpr.target,
-        title: gpr.title,
-        state: gpr.status,
-      };
-
-      // Add pull request to cache for further lookups / queries
-      if (config.prList !== null) {
-        (await config.prList).push(pr!);
-      }
-    }
-
-    // Abort and return null if no match was found
-    if (!pr) {
-      return null;
-    }
-
-    return pr;
-  },
-
-  async findPr({
-    branchName,
-    prTitle: title,
-    state = 'all',
-  }: FindPRConfig): Promise<Pr | null> {
-    logger.debug(`findPr(${branchName}, ${title!}, ${state})`);
-    const prList = await platform.getPrList();
-    const pr = prList.find(
-      (p) =>
-        p.sourceRepo === config.repository &&
-        p.sourceBranch === branchName &&
-        (!title || p.title === title)
-    );
-
-    if (pr) {
-      logger.debug(`Found PR #${pr.number}`);
-    }
-    return pr ?? null;
-  },
+  ,
 
   async createPr({
     sourceBranch,
