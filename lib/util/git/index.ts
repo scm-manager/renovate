@@ -195,7 +195,6 @@ export async function validateGitVersion(): Promise<boolean> {
 async function fetchBranchCommits(): Promise<void> {
   config.branchCommits = {};
   const opts = ['ls-remote', '--heads', config.url];
-  console.log(opts);
   if (config.extraCloneOpts) {
     Object.entries(config.extraCloneOpts).forEach((e) =>
       // TODO: types (#22198)
