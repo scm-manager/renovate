@@ -20,8 +20,11 @@ const URLS = {
   ME: 'me',
   REPO: (repoPath: string) => `repositories/${repoPath}`,
   PULLREQUESTS: (repoPath: string) => `pull-requests/${repoPath}`,
+  PULLREQUESTBYID: (repoPath: string, id: number) =>
+    `pull-requests/${repoPath}/${id}`,
 };
 
+//TODO Error Handling
 export class ScmmClient {
   private httpClient: AxiosInstance;
 
@@ -67,17 +70,14 @@ export class ScmmClient {
 
     return response.data._embedded.pullRequests;
   }
-}
 
-export async function searchPRs(
-  repoPath: string,
-  options: OptionsOfJSONResponseBody
-): Promise<Pr[]> {
-  const url = `${API_PATH}/pull-requests/${repoPath}/?status=IN_PROGRESS&page=0&pageSize=9999`;
-  const res = await got(url, options).json();
+  public async getRepoPr(repoPath: string, id: number): Promise<PullRequest> {
+    const response = await this.httpClient.get<PullRequest>(
+      URLS.PULLREQUESTBYID(repoPath, id)
+    );
 
-  //TODO add mapping to renovate pr schema
-  return Promise.resolve([]);
+    return response.data;
+  }
 }
 
 const API_PATH = 'unsinn';
@@ -160,16 +160,6 @@ export async function mergePR(
 ): Promise<void> {
   const url = `${API_PATH}/pull-requests/${repoPath}/${idx}/merge`;
   await got.post(url, options);
-}
-
-export async function getPR(
-  repoPath: string,
-  idx: number,
-  options: OptionsOfJSONResponseBody
-): Promise<PullRequest> {
-  const url = `${API_PATH}/pull-requests/${repoPath}/${idx}`;
-  const res = await got(url, options).json();
-  return Promise.resolve(res);
 }
 
 export async function createComment(

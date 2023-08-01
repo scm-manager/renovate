@@ -1,35 +1,21 @@
-import JSON5 from 'json5';
 import { logger } from '../../../logger';
-import type { BranchStatus } from '../../../types';
 import * as git from '../../../util/git';
-import { setBaseUrl } from '../../../util/http/gitea';
-import { sanitize } from '../../../util/sanitize';
-import { ensureTrailingSlash } from '../../../util/url';
-import { getPrBodyStruct, hashBody } from '../pr-body';
 import type {
-  BranchStatusConfig,
-  CreatePRConfig,
-  EnsureCommentConfig,
-  EnsureCommentRemovalConfig,
-  EnsureIssueConfig,
   FindPRConfig,
-  Issue,
-  MergePRConfig,
-  Platform,
   PlatformParams,
   PlatformResult,
   Pr,
   RepoParams,
   RepoResult,
-  UpdatePrConfig,
 } from '../types';
 import { repoFingerprint } from '../util';
-import { smartTruncate } from '../utils/pr-body';
-import * as helper from './scmm-client';
 import { ScmmClient } from './scmm-client';
-import type { PRMergeMethod, PRUpdateParams, Repo } from './types';
-import { getRepoUrl, smartLinks, trimTrailingApiPath } from './utils';
+import type { PRMergeMethod } from './types';
+import { getRepoUrl } from './utils';
 import { mapPrFromScmToRenovate } from './mapper';
+
+//TODO Error Handling
+//TODO Remove duplicate scmm client not undefined check
 
 interface SCMMRepoConfig {
   repository: string;
@@ -41,7 +27,7 @@ interface SCMMRepoConfig {
 
 export const id = 'scmm';
 
-const DRAFT_PREFIX = 'WIP: ';
+/*const DRAFT_PREFIX = 'WIP: ';
 
 const defaults = {
   hostType: 'scmm',
@@ -54,7 +40,7 @@ const defaultOptions = {
   password:
     'eyJhcGlLZXlJZCI6IkJqVGxmWG5BQk9DIiwidXNlciI6InR6ZXJyIiwicGFzc3BocmFzZSI6IkhoeGdURlZtTXhTOXFHd09LUXVYIn0',
   headers: { Accept: '*', 'X-Scm-Client': 'WUI' },
-};
+};*/
 
 let config: SCMMRepoConfig = {} as any;
 let scmmClient: ScmmClient | undefined = undefined;
@@ -125,61 +111,47 @@ export async function initRepo({
 
 export async function findPr({
   branchName,
-  prTitle: title,
-  state = 'all',
+  prTitle,
 }: FindPRConfig): Promise<Pr | null> {
-  console.log(branchName);
-  console.log(title);
-  console.log(state);
-
-  /*logger.debug(`findPr(${branchName}, ${title!}, ${state})`);
-  const prList = await platform.getPrList();
-  const pr = prList.find(
-    (p) =>
-      p.sourceRepo === config.repository &&
-      p.sourceBranch === branchName &&
-      (!title || p.title === title)
+  const inProgressPrs = await getPrList();
+  const result = inProgressPrs.find(
+    (pr) => pr.sourceBranch === branchName && pr.title === prTitle
   );
 
-  if (pr) {
-    logger.debug(`Found PR #${pr.number}`);
+  if (result) {
+    logger.info(`Found PR ${JSON.stringify(result)}`);
+    return result;
   }
-  return pr ?? null;*/
+
+  logger.error(
+    `Could not find PR with source branch ${branchName} and title ${prTitle}`
+  );
 
   return null;
 }
 
 export async function getPr(number: number): Promise<Pr | null> {
-  /*// Search for pull request in cached list or attempt to query directly
-  const prList = await platform.getPrList();
-  let pr = prList.find((p) => p.number === number) ?? null;
-  if (pr) {
-    logger.debug('Returning from cached PRs');
-  } else {
-    logger.debug('PR not found in cached PRs - trying to fetch directly');
-    const gpr = await helper.getPR(config.repository, number, defaultOptions);
-    pr = {
-      number: gpr.number,
-      sourceBranch: gpr.source,
-      targetBranch: gpr.target,
-      title: gpr.title,
-      state: gpr.status,
-    };
-
-    // Add pull request to cache for further lookups / queries
-    if (config.prList !== null) {
-      (await config.prList).push(pr!);
-    }
+  if (!scmmClient) {
+    throw new Error(
+      'Init Repo: You must init the plattform first, because client is undefined'
+    );
   }
 
-  // Abort and return null if no match was found
-  if (!pr) {
-    return null;
+  let inProgressPrs = await getPrList();
+  const cachedPr = inProgressPrs.find((pr) => pr.number === number);
+
+  if (cachedPr) {
+    logger.info(`Returning from cached PRs, ${JSON.stringify(cachedPr)}`);
+    return cachedPr;
   }
 
-  return pr;*/
+  const result = mapPrFromScmToRenovate(
+    await scmmClient.getRepoPr(config.repository, number)
+  );
 
-  return null;
+  logger.info(`Returning PR from API, ${JSON.stringify(result)}`);
+
+  return result;
 }
 
 export async function getPrList(): Promise<Pr[]> {
@@ -189,6 +161,7 @@ export async function getPrList(): Promise<Pr[]> {
     );
   }
 
+  //TODO is this caching "smart" enough, do we need to invalidate it at some point?
   if (config.prList === null) {
     config.prList = (
       await scmmClient.getAllRepoPrsInProgress(config.repository)
