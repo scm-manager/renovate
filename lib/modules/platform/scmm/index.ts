@@ -55,7 +55,6 @@ const defaultOptions = {
   headers: { Accept: '*', 'X-Scm-Client': 'WUI' },
 };
 
-let config: SCMMRepoConfig = {} as any;
 let scmmClient: ScmmClient | undefined = undefined;
 
 export async function initPlatform({
@@ -98,14 +97,12 @@ export async function initRepo({
   const repo = await scmmClient.getRepo(repository);
   const url = getRepoUrl(repo, gitUrl, scmmClient.getEndpoint());
 
-  config = {} as any;
+  const config: SCMMRepoConfig = {} as any;
   config.repository = repository;
-  console.log('pre init repo');
   await git.initRepo({
     ...config,
     url,
   });
-  console.log('post init repo');
 
   // Reset cached resources
   config.prList = null;
