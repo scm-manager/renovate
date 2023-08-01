@@ -9,20 +9,51 @@ import type {
   RepoContents,
   User,
 } from './types';
-import got, {OptionsOfJSONResponseBody} from "got";
-import type {Pr} from "../types";
+import got, { OptionsOfJSONResponseBody } from 'got';
+import type { Pr } from '../types';
+import type { AxiosInstance } from 'axios';
+import axios from 'axios';
 
-const API_PATH = 'https://ecosystem.cloudogu.com/scm/api/v2';
+const URLS = {
+  ME: 'me',
+  REPO: (repoPath: string) => `repositories/${repoPath}`,
+};
 
-const urlEscape = (raw: string): string => encodeURIComponent(raw);
+export class ScmmClient {
+  private httpClient: AxiosInstance;
 
-export async function getCurrentUser(
-  options: OptionsOfJSONResponseBody
-): Promise<User> {
-  const url = `${API_PATH}/me`;
-  const res = await got(url, options).json();
-  return Promise.resolve(res);
+  constructor(endpoint: string, token: string) {
+    this.httpClient = axios.create({
+      baseURL: endpoint,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: '*',
+        'X-Scm-Client': 'WUI',
+      },
+    });
+  }
+
+  public getEndpoint(): string {
+    if (!this.httpClient.defaults.baseURL) {
+      throw new Error('BaseURL is not defined');
+    }
+
+    return this.httpClient.defaults.baseURL;
+  }
+
+  public async getCurrentUser(): Promise<User> {
+    const response = await this.httpClient.get<User>(URLS.ME);
+    return response.data;
+  }
+
+  public async getRepo(repoPath: string): Promise<Repo> {
+    const response = await this.httpClient.get<Repo>(URLS.REPO(repoPath));
+    return response.data;
+  }
 }
+
+const API_PATH = 'unsinn';
+const urlEscape = (raw: string): string => encodeURIComponent(raw);
 
 export async function searchRepos(
   options: OptionsOfJSONResponseBody
@@ -66,13 +97,15 @@ export async function createPR(
   options: OptionsOfJSONResponseBody
 ): Promise<PR> {
   const url = `${API_PATH}/pull-requests/${repoPath}`;
-  const res = await got.post(url, {
-    ...options,
-    headers: {
-      "Content-Type": "application/vnd.scmm-pullrequest+json;v=2"
-    },
-    json: params,
-  }).json();
+  const res = await got
+    .post(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/vnd.scmm-pullrequest+json;v=2',
+      },
+      json: params,
+    })
+    .json();
 
   return Promise.resolve(res);
 }
@@ -137,7 +170,7 @@ export async function createComment(
   body: string,
   options: OptionsOfJSONResponseBody
 ): Promise<Comment> {
-    // Nothing
+  // Nothing
   return Promise.resolve({});
 }
 
@@ -186,5 +219,11 @@ export async function getBranch(
   const url = `${API_PATH}/repositories/${repoPath}/branches/develop`;
   const res = await got(url, options).json();
 
-  return {name: "develop", commit: { id: "a756ed3d997a894b9ffe623e8f96df107674a904", author: {username: "test", displayName: "test"}}};
+  return {
+    name: 'develop',
+    commit: {
+      id: 'a756ed3d997a894b9ffe623e8f96df107674a904',
+      author: { username: 'test', displayName: 'test' },
+    },
+  };
 }
