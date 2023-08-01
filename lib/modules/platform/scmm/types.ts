@@ -1,24 +1,48 @@
-export type PRState = 'open' | 'merged' | 'rejected';
-export type CommitStatusType =
-  | 'pending'
-  | 'success'
-  | 'error'
-  | 'failure'
-  | 'warning'
-  | 'unknown';
-export type PRMergeMethod = 'merge-commit' | 'rebase' | 'fast-forward-if-possible' | 'squash';
+export type Page<T> = {
+  page: number;
+  pageTotal: number;
+  _embedded: T;
+};
 
-export interface PR {
-  number: number;
-  status: PRState;
+export type Links = {
+  [link: string]: Link | Link[];
+};
+
+export type Link = {
+  href: string;
+  name?: string;
+  templated?: boolean;
+};
+
+export type PullRequestPage = {
+  pullRequests: PullRequest[];
+};
+
+export interface PullRequest {
+  id: string;
+  author?: User;
+  reviser?: Reviser;
+  closeDate?: string;
+  source: string;
+  target: string;
   title: string;
   description: string;
-  created_at: string;
-  closed_at: string;
-  source: string
-  target: string;
-  reviewers?: any[];
-  author?: { username?: string };
+  creationDate: string;
+  lastModified?: string;
+  status: PRState;
+  reviewer: Reviewer[];
+  labels: string[];
+  tasks: Tasks;
+
+  //TODO more properties available
+
+  _links: Links;
+  _embedded: {
+    defaultConfig: {
+      mergeStrategy: PRMergeMethod;
+      deleteBranchOnMerge: boolean;
+    };
+  };
 }
 
 export interface User {
@@ -27,12 +51,56 @@ export interface User {
   username: string;
 }
 
+export interface Reviser {
+  id?: string;
+  displayName?: string;
+}
+
+export type PRState = 'DRAFT' | 'OPEN' | 'REJECTED' | 'MERGED';
+
+export interface Reviewer {
+  id: string;
+  displayName: string;
+  mail?: string;
+  approved: boolean;
+}
+
+export interface Tasks {
+  todo: number;
+  done: number;
+}
+
+//TODO are these values correct
+export type PRMergeMethod =
+  | 'MERGE_COMMIT'
+  | 'REBASE'
+  | 'FAST_FORWARD_IF_POSSIBLE'
+  | 'SQUASH';
+
+export type CommitStatusType =
+  | 'pending'
+  | 'success'
+  | 'error'
+  | 'failure'
+  | 'warning'
+  | 'unknown';
+
 export interface Repo {
-  id: number;
+  contact: string;
+  creationDate: string;
+  description: string;
+  lastModified?: string;
   namespace: string;
   name: string;
-  _links: any[]
+  type: RepoType;
+  archived: boolean;
+  exporting: boolean;
+  healthCheckRunning: boolean;
+  _links: Links;
 }
+
+//TODO are these types correct?
+export type RepoType = 'git' | 'svn' | 'mercurial';
 
 export interface RepoContents {
   path: string;
