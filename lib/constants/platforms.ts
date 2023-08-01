@@ -6,7 +6,8 @@ export type PlatformId =
   | 'gitea'
   | 'github'
   | 'gitlab'
-  | 'local';
+  | 'local'
+  | 'scmm';
 
 export const GITHUB_API_USING_HOST_TYPES = [
   'github',
