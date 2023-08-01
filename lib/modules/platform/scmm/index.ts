@@ -1,11 +1,11 @@
 import JSON5 from 'json5';
-import {logger} from '../../../logger';
-import type {BranchStatus} from '../../../types';
+import { logger } from '../../../logger';
+import type { BranchStatus } from '../../../types';
 import * as git from '../../../util/git';
-import {setBaseUrl} from '../../../util/http/gitea';
-import {sanitize} from '../../../util/sanitize';
-import {ensureTrailingSlash} from '../../../util/url';
-import {getPrBodyStruct, hashBody} from '../pr-body';
+import { setBaseUrl } from '../../../util/http/gitea';
+import { sanitize } from '../../../util/sanitize';
+import { ensureTrailingSlash } from '../../../util/url';
+import { getPrBodyStruct, hashBody } from '../pr-body';
 import type {
   BranchStatusConfig,
   CreatePRConfig,
@@ -23,11 +23,12 @@ import type {
   RepoResult,
   UpdatePrConfig,
 } from '../types';
-import {repoFingerprint} from '../util';
-import {smartTruncate} from '../utils/pr-body';
-import * as helper from './scmm-helper';
-import type {PRMergeMethod, PRUpdateParams, Repo,} from './types';
-import {getRepoUrl, smartLinks, trimTrailingApiPath,} from './utils';
+import { repoFingerprint } from '../util';
+import { smartTruncate } from '../utils/pr-body';
+import * as helper from './scmm-client';
+import { ScmmClient } from './scmm-client';
+import type { PRMergeMethod, PRUpdateParams, Repo } from './types';
+import { getRepoUrl, smartLinks, trimTrailingApiPath } from './utils';
 
 interface SCMMRepoConfig {
   repository: string;
@@ -48,107 +49,93 @@ const defaults = {
 };
 
 const defaultOptions = {
-  username: "eheimbuch",
-  password: "****",
-  headers: { "Accept": "*", "X-Scm-Client": "WUI"}
-}
+  username: 'tzerr',
+  password:
+    'eyJhcGlLZXlJZCI6IkJqVGxmWG5BQk9DIiwidXNlciI6InR6ZXJyIiwicGFzc3BocmFzZSI6IkhoeGdURlZtTXhTOXFHd09LUXVYIn0',
+  headers: { Accept: '*', 'X-Scm-Client': 'WUI' },
+};
 
 let config: SCMMRepoConfig = {} as any;
-let botUserName: string;
+let scmmClient: ScmmClient | undefined = undefined;
 
-//
-// // TODO #7154
-// function toRenovatePR(data: PR): Pr | null {
-//   if (!data) {
-//     return null;
-//   }
-//
-//   if (
-//     !data.base?.ref ||
-//     !data.head?.label ||
-//     !data.head?.sha ||
-//     !data.head?.repo?.full_name
-//   ) {
-//     logger.trace(
-//       `Skipping Pull Request #${data.number} due to missing base and/or head branch`
-//     );
-//     return null;
-//   }
-//
-//   const createdBy = data.user?.username;
-//   if (createdBy && botUserName && createdBy !== botUserName) {
-//     return null;
-//   }
-//
-//   let title = data.title;
-//   let isDraft = false;
-//   if (title.startsWith(DRAFT_PREFIX)) {
-//     title = title.substring(DRAFT_PREFIX.length);
-//     isDraft = true;
-//   }
-//
-//   return {
-//     number: data.number,
-//     state: data.state,
-//     title,
-//     isDraft,
-//     bodyStruct: getPrBodyStruct(data.body),
-//     sha: data.head.sha,
-//     sourceBranch: data.head.label,
-//     targetBranch: data.base.ref,
-//     sourceRepo: data.head.repo.full_name,
-//     createdAt: data.created_at,
-//     cannotMergeReason: data.mergeable
-//       ? undefined
-//       : `pr.mergeable="${data.mergeable}"`,
-//     hasAssignees: !!(data.assignee?.login ?? is.nonEmptyArray(data.assignees)),
-//   };
-// }
+export async function initPlatform({
+  endpoint,
+  token,
+}: PlatformParams): Promise<PlatformResult> {
+  if (!endpoint) {
+    throw new Error(
+      'Init Platform: You must configure a SCM-Manager endpoint base path'
+    );
+  }
 
-const platform: Platform = {
-  async initPlatform({
-    endpoint,
-    token,
-  }: PlatformParams): Promise<PlatformResult> {
-    if (!token) {
-      throw new Error('Init: You must configure a SCM-Manager personal api key');
-    }
+  if (!token) {
+    throw new Error(
+      'Init Platform: You must configure a SCM-Manager personal api key'
+    );
+  }
 
-    if (endpoint) {
-      let baseEndpoint = trimTrailingApiPath(endpoint);
-      baseEndpoint = ensureTrailingSlash(baseEndpoint);
-      defaults.endpoint = baseEndpoint;
-    } else {
-      throw new Error('Missing server url. Please provide your api endpoint.');
-    }
-    setBaseUrl(defaults.endpoint);
+  scmmClient = new ScmmClient(endpoint, token);
 
-    let gitAuthor: string;
-    try {
-      const user = await helper.getCurrentUser(defaultOptions);
-      gitAuthor = `${user.displayName ?? user.username} <${user.mail}>`;
-      botUserName = user.username;
-    } catch (err) {
-      logger.debug(
-        { err },
-        'Error authenticating with SCM-Manager. Check your token'
-      );
-      throw new Error('Init: Authentication failure');
-    }
+  const me = await scmmClient.getCurrentUser();
+  const gitAuthor = `${me.displayName ?? me.username} <${me.mail}>`;
+  const result = { endpoint, gitAuthor };
 
-    return {
-      endpoint: defaults.endpoint,
-      gitAuthor,
-    };
-  },
+  logger.info(`Plattform initialized ${JSON.stringify(result)}`);
 
-  async getRawFile(
+  return result;
+}
+
+export async function initRepo({
+  repository,
+  gitUrl,
+}: RepoParams): Promise<RepoResult> {
+  if (!scmmClient) {
+    throw new Error(
+      'Init Repo: You must init the plattform first, because client is undefined'
+    );
+  }
+
+  const repo = await scmmClient.getRepo(repository);
+  const url = getRepoUrl(repo, gitUrl, scmmClient.getEndpoint());
+
+  config = {} as any;
+  config.repository = repository;
+  console.log('pre init repo');
+  await git.initRepo({
+    ...config,
+    url,
+  });
+  console.log('post init repo');
+
+  // Reset cached resources
+  config.prList = null;
+
+  const result = {
+    defaultBranch: config.defaultBranch,
+    isFork: false,
+    repoFingerprint: repoFingerprint(repo.id, scmmClient.getEndpoint()),
+  };
+
+  logger.info(`Repo initialized: ${JSON.stringify(result)}`);
+
+  return result;
+}
+
+/*const platform: Platform = {
+  ,
+
+async getRawFile(
     fileName: string,
     repoName: string,
     branchOrTag: string
   ): Promise<string | null> {
     const repo = repoName ?? config.repository;
-    const contents = await helper.getRepoContents(repo, fileName, branchOrTag, defaultOptions);
+    const contents = await helper.getRepoContents(
+      repo,
+      fileName,
+      branchOrTag,
+      defaultOptions
+    );
     return contents.contentString ?? null;
   },
 
@@ -162,10 +149,7 @@ const platform: Platform = {
     return JSON5.parse(raw);
   },
 
-  async initRepo({
-    repository,
-    gitUrl,
-  }: RepoParams): Promise<RepoResult> {
+  async initRepo({ repository, gitUrl }: RepoParams): Promise<RepoResult> {
     let repo: Repo;
 
     config = {} as any;
@@ -200,8 +184,8 @@ const platform: Platform = {
   async getRepos(): Promise<string[]> {
     logger.debug('Auto-discovering Gitea repositories');
     try {
-      const repos = await helper.searchRepos( defaultOptions)
-      return repos.map((r) => (r.namespace + "/" + r.name));
+      const repos = await helper.searchRepos(defaultOptions);
+      return repos.map((r) => r.namespace + '/' + r.name);
     } catch (err) {
       logger.error({ err }, 'SCM-Manager getRepos() error');
       throw err;
@@ -222,7 +206,6 @@ const platform: Platform = {
     branchName: string,
     internalChecksAsSuccess: boolean
   ): Promise<BranchStatus> {
-
     // Nothing
   },
 
@@ -235,7 +218,7 @@ const platform: Platform = {
 
   getPrList(): Promise<Pr[]> {
     if (config.prList === null) {
-      config.prList = helper.searchPRs(config.repository, defaultOptions)
+      config.prList = helper.searchPRs(config.repository, defaultOptions);
     }
 
     return config.prList;
@@ -255,7 +238,7 @@ const platform: Platform = {
         sourceBranch: gpr.source,
         targetBranch: gpr.target,
         title: gpr.title,
-        state: gpr.status
+        state: gpr.status,
       };
 
       // Add pull request to cache for further lookups / queries
@@ -302,7 +285,7 @@ const platform: Platform = {
     draftPR,
   }: CreatePRConfig): Promise<Pr> {
     let title = prTitle;
-    const target = "develop";
+    const target = 'develop';
     const source = sourceBranch;
     const description = sanitize(rawBody);
     if (draftPR) {
@@ -311,22 +294,23 @@ const platform: Platform = {
 
     logger.debug(`Creating pull request: ${title} (${source} => ${target})`);
     try {
-      const gpr = await helper.createPR(config.repository, {
-        target,
-        source,
-        title,
-        description,
-      }, defaultOptions);
+      const gpr = await helper.createPR(
+        config.repository,
+        {
+          target,
+          source,
+          title,
+          description,
+        },
+        defaultOptions
+      );
 
       if (platformOptions?.usePlatformAutomerge) {
-          try {
-            await helper.mergePR(config.repository, gpr.number, defaultOptions);
-          } catch (err) {
-            logger.warn(
-              { err, prNumber: gpr.number },
-              'automerge: fail'
-            );
-          }
+        try {
+          await helper.mergePR(config.repository, gpr.number, defaultOptions);
+        } catch (err) {
+          logger.warn({ err, prNumber: gpr.number }, 'automerge: fail');
+        }
       }
 
       const pr = {
@@ -334,7 +318,7 @@ const platform: Platform = {
         sourceBranch: gpr.source,
         targetBranch: gpr.target,
         title: gpr.title,
-        state: gpr.status
+        state: gpr.status,
       };
       if (!pr) {
         throw new Error('Can not parse newly created Pull Request');
@@ -363,7 +347,10 @@ const platform: Platform = {
 
         // If a valid PR was found, return and gracefully recover from the error. Otherwise, abort and throw error.
         if (pr?.bodyStruct) {
-          if (pr.title !== title || pr.bodyStruct.hash !== hashBody(description)) {
+          if (
+            pr.title !== title ||
+            pr.bodyStruct.hash !== hashBody(description)
+          ) {
             logger.debug(
               `Recovered from 409 Conflict, but PR for ${sourceBranch} is outdated. Updating...`
             );
@@ -406,7 +393,12 @@ const platform: Platform = {
       ...(state && { state }),
     };
 
-    await helper.updatePR(config.repository, number, prUpdateParams, defaultOptions);
+    await helper.updatePR(
+      config.repository,
+      number,
+      prUpdateParams,
+      defaultOptions
+    );
   },
 
   async mergePr({ id }: MergePRConfig): Promise<boolean> {
@@ -420,12 +412,11 @@ const platform: Platform = {
   },
 
   getIssueList(): Promise<Issue[]> {
-
     return Promise.resolve([]);
   },
 
   async getIssue(number: number, memCache = true): Promise<Issue | null> {
-    return Promise.resolve(null)
+    return Promise.resolve(null);
   },
 
   async findIssue(title: string): Promise<Issue | null> {
@@ -499,8 +490,10 @@ const platform: Platform = {
   },
 };
 
+*/
+
 /* eslint-disable @typescript-eslint/unbound-method */
-export const {
+/*export const {
   addAssignees,
   addReviewers,
   createPr,
@@ -528,4 +521,4 @@ export const {
   mergePr,
   setBranchStatus,
   updatePr,
-} = platform;
+} = platform;*/

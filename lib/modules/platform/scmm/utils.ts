@@ -60,7 +60,7 @@ export function getRepoUrl(
   if (!repoUrl) {
     throw new Error(CONFIG_GIT_URL_UNAVAILABLE);
   }
-  repoUrl.username = opts.token ?? '';
+  repoUrl.username = opts.username ?? '';
   return repoUrl.toString();
 }
 
