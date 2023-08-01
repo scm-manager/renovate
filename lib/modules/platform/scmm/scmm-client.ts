@@ -2,12 +2,14 @@ import type {
   Branch,
   Comment,
   CommitStatus,
-  PR,
+  PullRequest,
   PRCreateParams,
   PRUpdateParams,
   Repo,
   RepoContents,
   User,
+  PullRequestPage,
+  Page,
 } from './types';
 import got, { OptionsOfJSONResponseBody } from 'got';
 import type { Pr } from '../types';
@@ -17,6 +19,7 @@ import axios from 'axios';
 const URLS = {
   ME: 'me',
   REPO: (repoPath: string) => `repositories/${repoPath}`,
+  PULLREQUESTS: (repoPath: string) => `pull-requests/${repoPath}`,
 };
 
 export class ScmmClient {
@@ -50,6 +53,31 @@ export class ScmmClient {
     const response = await this.httpClient.get<Repo>(URLS.REPO(repoPath));
     return response.data;
   }
+
+  public async getAllRepoPrsInProgress(
+    repoPath: string
+  ): Promise<PullRequest[]> {
+    const response = await this.httpClient.get<Page<PullRequestPage>>(
+      URLS.PULLREQUESTS(repoPath),
+      {
+        //TODO is pageSize 9999 good enough?
+        params: { status: 'IN_PROGRESS', pageSize: 9999 },
+      }
+    );
+
+    return response.data._embedded.pullRequests;
+  }
+}
+
+export async function searchPRs(
+  repoPath: string,
+  options: OptionsOfJSONResponseBody
+): Promise<Pr[]> {
+  const url = `${API_PATH}/pull-requests/${repoPath}/?status=IN_PROGRESS&page=0&pageSize=9999`;
+  const res = await got(url, options).json();
+
+  //TODO add mapping to renovate pr schema
+  return Promise.resolve([]);
 }
 
 const API_PATH = 'unsinn';
@@ -62,15 +90,6 @@ export async function searchRepos(
   const res = await got(url, options).json();
 
   return Promise.resolve(res._embedded.repositories);
-}
-
-export async function getRepo(
-  repoPath: string,
-  options: OptionsOfJSONResponseBody
-): Promise<Repo> {
-  const url = `${API_PATH}/repositories/${repoPath}`;
-  const res = await got(url, options).json();
-  return Promise.resolve(res);
 }
 
 export async function getRepoContents(
@@ -95,7 +114,7 @@ export async function createPR(
   repoPath: string,
   params: PRCreateParams,
   options: OptionsOfJSONResponseBody
-): Promise<PR> {
+): Promise<PullRequest> {
   const url = `${API_PATH}/pull-requests/${repoPath}`;
   const res = await got
     .post(url, {
@@ -147,21 +166,10 @@ export async function getPR(
   repoPath: string,
   idx: number,
   options: OptionsOfJSONResponseBody
-): Promise<PR> {
+): Promise<PullRequest> {
   const url = `${API_PATH}/pull-requests/${repoPath}/${idx}`;
   const res = await got(url, options).json();
   return Promise.resolve(res);
-}
-
-export async function searchPRs(
-  repoPath: string,
-  options: OptionsOfJSONResponseBody
-): Promise<Pr[]> {
-  const url = `${API_PATH}/pull-requests/${repoPath}/?status=IN_PROGRESS&page=0&pageSize=9999`;
-  const res = await got(url, options).json();
-
-  //TODO add mapping to renovate pr schema
-  return Promise.resolve([]);
 }
 
 export async function createComment(
