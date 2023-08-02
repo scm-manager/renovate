@@ -313,10 +313,6 @@ export async function getRepos(): Promise<string[]> {
     // Nothing
   },
 
-  getRepoForceRebase(): Promise<boolean> {
-    return Promise.resolve(false);
-  },
-
   async ensureComment({
     number: issue,
     topic,
@@ -329,12 +325,6 @@ export async function getRepos(): Promise<string[]> {
     deleteConfig: EnsureCommentRemovalConfig
   ): Promise<void> {
     // Nothing
-  },
-
-  async getBranchPr(branchName: string): Promise<Pr | null> {
-    logger.debug(`getBranchPr(${branchName})`);
-    const pr = await platform.findPr({ branchName, state: 'open' });
-    return pr ? platform.getPr(pr.number) : null;
   },
 
   async addAssignees(number: number, assignees: string[]): Promise<void> {
