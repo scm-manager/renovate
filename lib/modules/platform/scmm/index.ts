@@ -206,6 +206,7 @@ export async function ensureIssueClosing(title: string): Promise<void> {
 }
 
 export function massageMarkdown(prBody: string): string {
+  //TODO which length for len
   return smartTruncate(smartLinks(prBody), 1000000);
 }
 
