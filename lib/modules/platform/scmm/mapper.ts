@@ -12,7 +12,6 @@ export function mapPrFromScmToRenovate(pr: SCMPullRequest): RenovatePr {
     reviewers: pr.reviewer
       ? pr.reviewer.map((review) => review.displayName)
       : [],
-    //TODO is this correct
     state: pr.status,
     title: pr.title,
     isDraft: pr.status === 'DRAFT',
