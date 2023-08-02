@@ -14,7 +14,6 @@ import type {
 } from '../types';
 import { repoFingerprint } from '../util';
 import { ScmmClient } from './scmm-client';
-import type { PRMergeMethod } from './types';
 import { getRepoUrl, matchPrState, smartLinks } from './utils';
 import { mapPrFromScmToRenovate } from './mapper';
 import { smartTruncate } from '../utils/pr-body';
@@ -24,8 +23,6 @@ import { sanitize } from '../../../util/sanitize';
 
 interface SCMMRepoConfig {
   repository: string;
-  mergeMethod: PRMergeMethod;
-
   prList: Pr[] | null;
   defaultBranch: string;
 }
