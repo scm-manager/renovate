@@ -21,7 +21,6 @@ import { smartTruncate } from '../utils/pr-body';
 import { sanitize } from '../../../util/sanitize';
 
 //TODO Error Handling
-//TODO Remove duplicate scmm client not undefined check
 
 interface SCMMRepoConfig {
   repository: string;
@@ -33,23 +32,8 @@ interface SCMMRepoConfig {
 
 export const id = 'scmm';
 
-/*const DRAFT_PREFIX = 'WIP: ';
-
-const defaults = {
-  hostType: 'scmm',
-  endpoint: 'https://ecosystem.cloudogu.com/scm',
-  version: '0.0.0',
-};
-
-const defaultOptions = {
-  username: 'tzerr',
-  password:
-    'eyJhcGlLZXlJZCI6IkJqVGxmWG5BQk9DIiwidXNlciI6InR6ZXJyIiwicGFzc3BocmFzZSI6IkhoeGdURlZtTXhTOXFHd09LUXVYIn0',
-  headers: { Accept: '*', 'X-Scm-Client': 'WUI' },
-};*/
-
 let config: SCMMRepoConfig = {} as any;
-let scmmClient: ScmmClient | undefined = undefined;
+let scmmClient: ScmmClient;
 
 export async function initPlatform({
   endpoint,
@@ -82,12 +66,6 @@ export async function initRepo({
   repository,
   gitUrl,
 }: RepoParams): Promise<RepoResult> {
-  if (!scmmClient) {
-    throw new Error(
-      'Init Repo: You must init the plattform first, because client is undefined'
-    );
-  }
-
   const repo = await scmmClient.getRepo(repository);
   const defaultBranch = await scmmClient.getDefaultBranch(repo);
   const url = getRepoUrl(repo, gitUrl, scmmClient.getEndpoint());
@@ -148,12 +126,6 @@ export async function findPr({
 }
 
 export async function getPr(number: number): Promise<Pr | null> {
-  if (!scmmClient) {
-    throw new Error(
-      'Init Repo: You must init the plattform first, because client is undefined'
-    );
-  }
-
   const inProgressPrs = await getPrList();
   const cachedPr = inProgressPrs.find((pr) => pr.number === number);
 
@@ -172,12 +144,6 @@ export async function getPr(number: number): Promise<Pr | null> {
 }
 
 export async function getPrList(): Promise<Pr[]> {
-  if (!scmmClient) {
-    throw new Error(
-      'Init Repo: You must init the plattform first, because client is undefined'
-    );
-  }
-
   //TODO is this caching "smart" enough, do we need to invalidate it at some point?
   if (config.prList === null) {
     config.prList = (await scmmClient.getAllRepoPrs(config.repository)).map(
@@ -195,12 +161,6 @@ export async function createPr({
   prBody,
   draftPR,
 }: CreatePRConfig): Promise<Pr> {
-  if (!scmmClient) {
-    throw new Error(
-      'Init Repo: You must init the plattform first, because client is undefined'
-    );
-  }
-
   const createdPr = await scmmClient.createPr(config.repository, {
     source: sourceBranch,
     target: targetBranch,
@@ -221,14 +181,7 @@ export async function updatePr({
   state,
   targetBranch,
 }: UpdatePrConfig): Promise<void> {
-  if (!scmmClient) {
-    throw new Error(
-      'Init Repo: You must init the plattform first, because client is undefined'
-    );
-  }
-
   //TODO how to handle state and target branch?
-
   await scmmClient.updatePr(config.repository, number, {
     title: prTitle,
     description: sanitize(prBody) ?? undefined,
