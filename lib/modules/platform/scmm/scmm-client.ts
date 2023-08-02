@@ -3,16 +3,16 @@ import type {
   Comment,
   CommitStatus,
   PullRequest,
-  PRCreateParams,
-  PRUpdateParams,
+  PullRequestCreateParams,
+  PullRequestUpdateParams,
   Repo,
   RepoContents,
   User,
   PullRequestPage,
   Page,
+  Link,
 } from './types';
 import got, { OptionsOfJSONResponseBody } from 'got';
-import type { Pr } from '../types';
 import type { AxiosInstance } from 'axios';
 import axios from 'axios';
 
@@ -22,6 +22,10 @@ const URLS = {
   PULLREQUESTS: (repoPath: string) => `pull-requests/${repoPath}`,
   PULLREQUESTBYID: (repoPath: string, id: number) =>
     `pull-requests/${repoPath}/${id}`,
+};
+
+const CONTENT_TYPES = {
+  PULLREQUESTS: 'application/vnd.scmm-pullrequest+json;v=2',
 };
 
 //TODO Error Handling
@@ -57,17 +61,24 @@ export class ScmmClient {
     return response.data;
   }
 
-  public async getAllRepoPrsInProgress(
-    repoPath: string
-  ): Promise<PullRequest[]> {
+  public async getDefaultBranch(repo: Repo): Promise<string> {
+    const defaultBranchUrl = repo._links['defaultBranch'] as Link;
+    const response = await this.httpClient.get<{ defaultBranch: string }>(
+      defaultBranchUrl.href,
+      { baseURL: undefined }
+    );
+
+    return response.data.defaultBranch;
+  }
+
+  public async getAllRepoPrs(repoPath: string): Promise<PullRequest[]> {
     const response = await this.httpClient.get<Page<PullRequestPage>>(
       URLS.PULLREQUESTS(repoPath),
       {
         //TODO is pageSize 9999 good enough?
-        params: { status: 'IN_PROGRESS', pageSize: 9999 },
+        params: { status: 'ALL', pageSize: 9999 },
       }
     );
-
     return response.data._embedded.pullRequests;
   }
 
@@ -77,6 +88,39 @@ export class ScmmClient {
     );
 
     return response.data;
+  }
+
+  public async createPr(
+    repoPath: string,
+    params: PullRequestCreateParams
+  ): Promise<PullRequest> {
+    const createPrResponse = await this.httpClient.post(
+      URLS.PULLREQUESTS(repoPath),
+      params,
+      {
+        headers: {
+          'Content-Type': CONTENT_TYPES.PULLREQUESTS,
+        },
+      }
+    );
+
+    const getCreatedPrResponse = await this.httpClient.get<PullRequest>(
+      createPrResponse.headers.location
+    );
+
+    return getCreatedPrResponse.data;
+  }
+
+  public async updatePr(
+    repoPath: string,
+    id: number,
+    params: PullRequestUpdateParams
+  ) {
+    await this.httpClient.put(URLS.PULLREQUESTBYID(repoPath, id), params, {
+      headers: {
+        'Content-Type': CONTENT_TYPES.PULLREQUESTS,
+      },
+    });
   }
 }
 
@@ -108,40 +152,6 @@ export async function getRepoContents(
   }
 
   return Promise.resolve(res);
-}
-
-export async function createPR(
-  repoPath: string,
-  params: PRCreateParams,
-  options: OptionsOfJSONResponseBody
-): Promise<PullRequest> {
-  const url = `${API_PATH}/pull-requests/${repoPath}`;
-  const res = await got
-    .post(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/vnd.scmm-pullrequest+json;v=2',
-      },
-      json: params,
-    })
-    .json();
-
-  return Promise.resolve(res);
-}
-
-export async function updatePR(
-  repoPath: string,
-  idx: number,
-  params: PRUpdateParams,
-  options: OptionsOfJSONResponseBody
-): Promise<void> {
-  const url = `${API_PATH}/pull-requests/${repoPath}/${idx}`;
-  await got.post(url, {
-    ...options,
-    json: params,
-  });
-
-  return Promise.resolve({});
 }
 
 export async function closePR(

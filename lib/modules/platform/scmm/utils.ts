@@ -4,8 +4,34 @@ import { logger } from '../../../logger';
 import * as hostRules from '../../../util/host-rules';
 import { regEx } from '../../../util/regex';
 import { parseUrl } from '../../../util/url';
-import type { GitUrlOption } from '../types';
+import type { GitUrlOption, Pr } from '../types';
 import type { PRMergeMethod, Repo } from './types';
+
+export function matchPrState(
+  pr: Pr,
+  state: 'open' | 'closed' | '!open' | 'all'
+): boolean {
+  if (state === 'all') {
+    return true;
+  }
+
+  if (state === 'open' && pr.state === 'OPEN') {
+    return true;
+  }
+
+  if (state === '!open' && pr.state === 'MERGED') {
+    return true;
+  }
+
+  if (
+    state === 'closed' &&
+    (pr.state === 'MERGED' || pr.state === 'REJECTED')
+  ) {
+    return true;
+  }
+
+  return false;
+}
 
 export function smartLinks(body: string): string {
   return body?.replace(regEx(/\]\(\.\.\/pull\//g), '](pulls/');
@@ -21,7 +47,8 @@ export function getRepoUrl(
   endpoint: string
 ): string {
   if (gitUrl === 'ssh') {
-    const sshUrl = repo._links?.protocol?.filter(l => l.name === "ssh")[0].href;
+    const sshUrl = repo._links?.protocol?.filter((l) => l.name === 'ssh')[0]
+      .href;
     if (!sshUrl) {
       throw new Error(CONFIG_GIT_URL_UNAVAILABLE);
     }
@@ -49,7 +76,8 @@ export function getRepoUrl(
     return url.toString();
   }
 
-  const httpUrl = repo._links?.protocol?.filter(l => l.name === "http")[0].href;
+  const httpUrl = repo._links?.protocol?.filter((l) => l.name === 'http')[0]
+    .href;
 
   if (!httpUrl) {
     throw new Error(CONFIG_GIT_URL_UNAVAILABLE);
