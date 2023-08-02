@@ -5,7 +5,7 @@ import * as hostRules from '../../../util/host-rules';
 import { regEx } from '../../../util/regex';
 import { parseUrl } from '../../../util/url';
 import type { GitUrlOption, Pr } from '../types';
-import type { PRMergeMethod, Repo } from './types';
+import type { Link, PRMergeMethod, Repo } from './types';
 
 export function matchPrState(
   pr: Pr,
@@ -37,18 +37,15 @@ export function smartLinks(body: string): string {
   return body?.replace(regEx(/\]\(\.\.\/pull\//g), '](pulls/');
 }
 
-export function trimTrailingApiPath(url: string): string {
-  return url?.replace(regEx(/api\/v1\/?$/g), '');
-}
-
 export function getRepoUrl(
   repo: Repo,
   gitUrl: GitUrlOption | undefined,
   endpoint: string
 ): string {
+  const protocolLinks = repo._links.protocol as Link[];
+
   if (gitUrl === 'ssh') {
-    const sshUrl = repo._links?.protocol?.filter((l) => l.name === 'ssh')[0]
-      .href;
+    const sshUrl = protocolLinks.find((l) => l.name === 'ssh')?.href;
     if (!sshUrl) {
       throw new Error(CONFIG_GIT_URL_UNAVAILABLE);
     }
@@ -76,8 +73,7 @@ export function getRepoUrl(
     return url.toString();
   }
 
-  const httpUrl = repo._links?.protocol?.filter((l) => l.name === 'http')[0]
-    .href;
+  const httpUrl = protocolLinks.find((l) => l.name === 'http')?.href;
 
   if (!httpUrl) {
     throw new Error(CONFIG_GIT_URL_UNAVAILABLE);
@@ -97,14 +93,13 @@ export function getMergeMethod(
 ): PRMergeMethod | null {
   switch (strategy) {
     case 'fast-forward':
-      return 'fast-forward-if-possible';
+      return 'FAST_FORWARD_IF_POSSIBLE';
     case 'merge-commit':
-      return 'merge-commit';
+      return 'MERGE_COMMIT';
     case 'rebase':
-      return 'rebase';
+      return 'REBASE';
     case 'squash':
-      return strategy;
-    case 'auto':
+      return 'SQUASH';
     default:
       return null;
   }
