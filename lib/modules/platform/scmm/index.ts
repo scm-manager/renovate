@@ -1,18 +1,24 @@
 import { logger } from '../../../logger';
 import * as git from '../../../util/git';
 import type {
+  CreatePRConfig,
+  EnsureIssueConfig,
   FindPRConfig,
+  Issue,
   PlatformParams,
   PlatformResult,
   Pr,
   RepoParams,
   RepoResult,
+  UpdatePrConfig,
 } from '../types';
 import { repoFingerprint } from '../util';
 import { ScmmClient } from './scmm-client';
 import type { PRMergeMethod } from './types';
-import { getRepoUrl } from './utils';
+import { getRepoUrl, matchPrState, smartLinks } from './utils';
 import { mapPrFromScmToRenovate } from './mapper';
+import { smartTruncate } from '../utils/pr-body';
+import { sanitize } from '../../../util/sanitize';
 
 //TODO Error Handling
 //TODO Remove duplicate scmm client not undefined check
@@ -83,10 +89,13 @@ export async function initRepo({
   }
 
   const repo = await scmmClient.getRepo(repository);
+  const defaultBranch = await scmmClient.getDefaultBranch(repo);
   const url = getRepoUrl(repo, gitUrl, scmmClient.getEndpoint());
 
   config = {} as any;
   config.repository = repository;
+  config.defaultBranch = defaultBranch;
+
   await git.initRepo({
     ...config,
     url,
@@ -109,13 +118,21 @@ export async function initRepo({
   return result;
 }
 
+export async function getBranchPr(branchName: string): Promise<Pr | null> {
+  return await findPr({ branchName, state: 'open' });
+}
+
 export async function findPr({
   branchName,
   prTitle,
+  state = 'all',
 }: FindPRConfig): Promise<Pr | null> {
   const inProgressPrs = await getPrList();
   const result = inProgressPrs.find(
-    (pr) => pr.sourceBranch === branchName && pr.title === prTitle
+    (pr) =>
+      branchName === pr.sourceBranch &&
+      (!prTitle || prTitle === pr.title) &&
+      matchPrState(pr, state)
   );
 
   if (result) {
@@ -123,7 +140,7 @@ export async function findPr({
     return result;
   }
 
-  logger.error(
+  logger.info(
     `Could not find PR with source branch ${branchName} and title ${prTitle}`
   );
 
@@ -137,7 +154,7 @@ export async function getPr(number: number): Promise<Pr | null> {
     );
   }
 
-  let inProgressPrs = await getPrList();
+  const inProgressPrs = await getPrList();
   const cachedPr = inProgressPrs.find((pr) => pr.number === number);
 
   if (cachedPr) {
@@ -163,16 +180,114 @@ export async function getPrList(): Promise<Pr[]> {
 
   //TODO is this caching "smart" enough, do we need to invalidate it at some point?
   if (config.prList === null) {
-    config.prList = (
-      await scmmClient.getAllRepoPrsInProgress(config.repository)
-    ).map((pr) => mapPrFromScmToRenovate(pr));
+    config.prList = (await scmmClient.getAllRepoPrs(config.repository)).map(
+      (pr) => mapPrFromScmToRenovate(pr)
+    );
   }
 
   return config.prList || [];
 }
 
+export async function createPr({
+  sourceBranch,
+  targetBranch,
+  prTitle,
+  prBody,
+  draftPR,
+}: CreatePRConfig): Promise<Pr> {
+  if (!scmmClient) {
+    throw new Error(
+      'Init Repo: You must init the plattform first, because client is undefined'
+    );
+  }
+
+  const createdPr = await scmmClient.createPr(config.repository, {
+    source: sourceBranch,
+    target: targetBranch,
+    title: prTitle,
+    description: sanitize(prBody),
+    status: draftPR ? 'DRAFT' : 'OPEN',
+  });
+
+  logger.info(`Pr Created ${JSON.stringify(createdPr)}`);
+
+  return mapPrFromScmToRenovate(createdPr);
+}
+
+export async function updatePr({
+  number,
+  prTitle,
+  prBody,
+  state,
+  targetBranch,
+}: UpdatePrConfig): Promise<void> {
+  if (!scmmClient) {
+    throw new Error(
+      'Init Repo: You must init the plattform first, because client is undefined'
+    );
+  }
+
+  //TODO how to handle state and target branch?
+
+  await scmmClient.updatePr(config.repository, number, {
+    title: prTitle,
+    description: sanitize(prBody) ?? undefined,
+  });
+
+  logger.info(`Updated Pr #${number} with title ${prTitle}`);
+}
+
+export async function findIssue(title: string): Promise<Issue | null> {
+  logger.debug('NO-OP findIssue');
+  return null;
+}
+
+export async function ensureIssue({
+  title,
+  reuseTitle,
+  body: content,
+  labels: labelNames,
+  shouldReOpen,
+  once,
+}: EnsureIssueConfig): Promise<'updated' | 'created' | null> {
+  return null;
+}
+
+export async function ensureIssueClosing(title: string): Promise<void> {
+  logger.debug('NO-OP ensureIssueClosing');
+}
+
+export function massageMarkdown(prBody: string): string {
+  return smartTruncate(smartLinks(prBody), 1000000);
+}
+
 /*const platform: Platform = {
-  ,
+
+  async updatePr({
+    number,
+    prTitle,
+    prBody: body,
+    state,
+    targetBranch,
+  }: UpdatePrConfig): Promise<void> {
+    let title = prTitle;
+    if ((await getPrList()).find((pr) => pr.number === number)?.isDraft) {
+      title = DRAFT_PREFIX + title;
+    }
+
+    const prUpdateParams: PRUpdateParams = {
+      title,
+      ...(body && { body }),
+      ...(state && { state }),
+    };
+
+    await helper.updatePR(
+      config.repository,
+      number,
+      prUpdateParams,
+      defaultOptions
+    );
+  },
 
 async getRawFile(
     fileName: string,
@@ -199,37 +314,6 @@ async getRawFile(
     return JSON5.parse(raw);
   },
 
-  async initRepo({ repository, gitUrl }: RepoParams): Promise<RepoResult> {
-    let repo: Repo;
-
-    config = {} as any;
-    config.repository = repository;
-
-    // Attempt to fetch information about repository
-    try {
-      repo = await helper.getRepo(repository, defaultOptions);
-    } catch (err) {
-      logger.debug({ err }, 'Unknown SCMM initRepo error');
-      throw err;
-    }
-
-    const url = getRepoUrl(repo, gitUrl, defaults.endpoint);
-
-    // Initialize Git storage
-    await git.initRepo({
-      ...config,
-      url,
-    });
-
-    // Reset cached resources
-    config.prList = null;
-
-    return {
-      defaultBranch: config.defaultBranch,
-      isFork: false,
-      repoFingerprint: repoFingerprint(repo.id, defaults.endpoint),
-    };
-  },
 
   async getRepos(): Promise<string[]> {
     logger.debug('Auto-discovering Gitea repositories');
@@ -268,135 +352,7 @@ async getRawFile(
 
   ,
 
-  ,
 
-  ,
-
-  async createPr({
-    sourceBranch,
-    targetBranch,
-    prTitle,
-    prBody: rawBody,
-    labels: labelNames,
-    platformOptions,
-    draftPR,
-  }: CreatePRConfig): Promise<Pr> {
-    let title = prTitle;
-    const target = 'develop';
-    const source = sourceBranch;
-    const description = sanitize(rawBody);
-    if (draftPR) {
-      title = DRAFT_PREFIX + title;
-    }
-
-    logger.debug(`Creating pull request: ${title} (${source} => ${target})`);
-    try {
-      const gpr = await helper.createPR(
-        config.repository,
-        {
-          target,
-          source,
-          title,
-          description,
-        },
-        defaultOptions
-      );
-
-      if (platformOptions?.usePlatformAutomerge) {
-        try {
-          await helper.mergePR(config.repository, gpr.number, defaultOptions);
-        } catch (err) {
-          logger.warn({ err, prNumber: gpr.number }, 'automerge: fail');
-        }
-      }
-
-      const pr = {
-        number: gpr.number,
-        sourceBranch: gpr.source,
-        targetBranch: gpr.target,
-        title: gpr.title,
-        state: gpr.status,
-      };
-      if (!pr) {
-        throw new Error('Can not parse newly created Pull Request');
-      }
-      if (config.prList !== null) {
-        (await config.prList).push(pr);
-      }
-
-      return pr;
-    } catch (err) {
-      // When the user manually deletes a branch from Renovate, the PR remains but is no longer linked to any branch. In
-      // the most recent versions of Gitea, the PR gets automatically closed when that happens, but older versions do
-      // not handle this properly and keep the PR open. As pushing a branch with the same name resurrects the PR, this
-      // would cause a HTTP 409 conflict error, which we hereby gracefully handle.
-      if (err.statusCode === 409) {
-        logger.warn(
-          `Attempting to gracefully recover from 409 Conflict response in createPr(${title}, ${sourceBranch})`
-        );
-
-        // Refresh cached PR list and search for pull request with matching information
-        config.prList = null;
-        const pr = await platform.findPr({
-          branchName: sourceBranch,
-          state: 'open',
-        });
-
-        // If a valid PR was found, return and gracefully recover from the error. Otherwise, abort and throw error.
-        if (pr?.bodyStruct) {
-          if (
-            pr.title !== title ||
-            pr.bodyStruct.hash !== hashBody(description)
-          ) {
-            logger.debug(
-              `Recovered from 409 Conflict, but PR for ${sourceBranch} is outdated. Updating...`
-            );
-            await platform.updatePr({
-              number: pr.number,
-              prTitle: title,
-              prBody: description,
-            });
-            pr.title = title;
-            pr.bodyStruct = getPrBodyStruct(description);
-          } else {
-            logger.debug(
-              `Recovered from 409 Conflict and PR for ${sourceBranch} is up-to-date`
-            );
-          }
-
-          return pr;
-        }
-      }
-
-      throw err;
-    }
-  },
-
-  async updatePr({
-    number,
-    prTitle,
-    prBody: body,
-    state,
-    targetBranch,
-  }: UpdatePrConfig): Promise<void> {
-    let title = prTitle;
-    if ((await getPrList()).find((pr) => pr.number === number)?.isDraft) {
-      title = DRAFT_PREFIX + title;
-    }
-
-    const prUpdateParams: PRUpdateParams = {
-      title,
-      ...(body && { body }),
-      ...(state && { state }),
-    };
-
-    await helper.updatePR(
-      config.repository,
-      number,
-      prUpdateParams,
-      defaultOptions
-    );
-  },
 
   async mergePr({ id }: MergePRConfig): Promise<boolean> {
     try {
@@ -408,43 +364,16 @@ async getRawFile(
     }
   },
 
-  getIssueList(): Promise<Issue[]> {
-    return Promise.resolve([]);
-  },
+ ,
 
   async getIssue(number: number, memCache = true): Promise<Issue | null> {
     return Promise.resolve(null);
   },
 
-  async findIssue(title: string): Promise<Issue | null> {
-    const issueList = await platform.getIssueList();
-    const issue = issueList.find(
-      (i) => i.state === 'open' && i.title === title
-    );
+  ,
 
-    if (!issue) {
-      return null;
-    }
-    // TODO: types (#7154)
-    logger.debug(`Found Issue #${issue.number!}`);
-    // TODO #7154
-    return getIssue!(issue.number!);
-  },
+  ,
 
-  async ensureIssue({
-    title,
-    reuseTitle,
-    body: content,
-    labels: labelNames,
-    shouldReOpen,
-    once,
-  }: EnsureIssueConfig): Promise<'updated' | 'created' | null> {
-    return null;
-  },
-
-  async ensureIssueClosing(title: string): Promise<void> {
-    // Nothing
-  },
 
   async deleteLabel(issue: number, labelName: string): Promise<void> {
     // Nothing
@@ -482,40 +411,7 @@ async getRawFile(
     // Nothing
   },
 
-  massageMarkdown(prBody: string): string {
-    return smartTruncate(smartLinks(prBody), 1000000);
-  },
+  ,
 };
 
 */
-
-/* eslint-disable @typescript-eslint/unbound-method */
-/*export const {
-  addAssignees,
-  addReviewers,
-  createPr,
-  deleteLabel,
-  ensureComment,
-  ensureCommentRemoval,
-  ensureIssue,
-  ensureIssueClosing,
-  findIssue,
-  findPr,
-  getBranchPr,
-  getBranchStatus,
-  getBranchStatusCheck,
-  getIssue,
-  getRawFile,
-  getJsonFile,
-  getIssueList,
-  getPr,
-  massageMarkdown,
-  getPrList,
-  getRepoForceRebase,
-  getRepos,
-  initPlatform,
-  initRepo,
-  mergePr,
-  setBranchStatus,
-  updatePr,
-} = platform;*/
