@@ -141,7 +141,7 @@ export async function findPr({
   }
 
   logger.info(
-    `Could not find PR with source branch ${branchName} and title ${prTitle}`
+    `Could not find PR with source branch ${branchName} and title ${prTitle} and state ${state}`
   );
 
   return null;
@@ -242,14 +242,10 @@ export async function findIssue(title: string): Promise<Issue | null> {
   return null;
 }
 
-export async function ensureIssue({
-  title,
-  reuseTitle,
-  body: content,
-  labels: labelNames,
-  shouldReOpen,
-  once,
-}: EnsureIssueConfig): Promise<'updated' | 'created' | null> {
+export async function ensureIssue(
+  config: EnsureIssueConfig
+): Promise<'updated' | 'created' | null> {
+  logger.debug('NO-OP ensureIssue');
   return null;
 }
 
@@ -261,70 +257,55 @@ export function massageMarkdown(prBody: string): string {
   return smartTruncate(smartLinks(prBody), 1000000);
 }
 
+export async function getRepoForceRebase(): Promise<boolean> {
+  return false;
+}
+
 /*const platform: Platform = {
 
-  async updatePr({
-    number,
-    prTitle,
-    prBody: body,
-    state,
-    targetBranch,
-  }: UpdatePrConfig): Promise<void> {
-    let title = prTitle;
-    if ((await getPrList()).find((pr) => pr.number === number)?.isDraft) {
-      title = DRAFT_PREFIX + title;
-    }
+export async function getRawFile(
+  fileName: string,
+  repoName: string,
+  branchOrTag: string
+): Promise<string | null> {
+  return scmmClient?.getFileContent(repoName, branchOrTag, fileName) ?? null;
+}
 
-    const prUpdateParams: PRUpdateParams = {
-      title,
-      ...(body && { body }),
-      ...(state && { state }),
-    };
-
-    await helper.updatePR(
-      config.repository,
-      number,
-      prUpdateParams,
-      defaultOptions
+export async function getJsonFile(
+  fileName: string,
+  repoName?: string,
+  branchOrTag?: string
+): Promise<any | null> {
+  if (!repoName || !branchOrTag) {
+    throw new Error(
+      `Missing repoName ${repoName} or branchOrTag ${branchOrTag}`
     );
-  },
+  }
 
-async getRawFile(
-    fileName: string,
-    repoName: string,
-    branchOrTag: string
-  ): Promise<string | null> {
-    const repo = repoName ?? config.repository;
-    const contents = await helper.getRepoContents(
-      repo,
-      fileName,
-      branchOrTag,
-      defaultOptions
+  const raw = await getRawFile(fileName, repoName, branchOrTag);
+
+  if (!raw) {
+    throw new Error(
+      `Could not find file ${fileName} in repo ${repoName} for revision ${branchOrTag}`
     );
-    return contents.contentString ?? null;
-  },
+  }
 
-  async getJsonFile(
-    fileName: string,
-    repoName?: string,
-    branchOrTag?: string
-  ): Promise<any | null> {
-    // TODO #7154
-    const raw = (await platform.getRawFile(fileName, repoName, branchOrTag))!;
-    return JSON5.parse(raw);
-  },
+  return JSON.parse(raw);
+}
 
+export async function getRepos(): Promise<string[]> {
+  logger.debug('Auto-discovering Gitea repositories');
+  try {
+    const repos = await helper.searchRepos(defaultOptions);
+    return repos.map((r) => r.namespace + '/' + r.name);
+  } catch (err) {
+    logger.error({ err }, 'SCM-Manager getRepos() error');
+    throw err;
+  }
 
-  async getRepos(): Promise<string[]> {
-    logger.debug('Auto-discovering Gitea repositories');
-    try {
-      const repos = await helper.searchRepos(defaultOptions);
-      return repos.map((r) => r.namespace + '/' + r.name);
-    } catch (err) {
-      logger.error({ err }, 'SCM-Manager getRepos() error');
-      throw err;
-    }
-  },
+  throw new Error('Not implemented');
+}
+,
 
   async setBranchStatus({
     branchName,
