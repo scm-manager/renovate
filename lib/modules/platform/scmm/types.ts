@@ -5,7 +5,7 @@ export type Page<T> = {
 };
 
 export type Links = {
-  [link: string]: Link | Link[];
+  [link: string]: Link | Link[] | undefined;
 };
 
 export type Link = {
@@ -17,6 +17,18 @@ export type Link = {
 export type PullRequestPage = {
   pullRequests: PullRequest[];
 };
+
+export interface PullRequestCreateParams extends PullRequestUpdateParams {
+  source: string;
+  target: string;
+}
+
+export interface PullRequestUpdateParams {
+  title: string;
+  description?: string;
+  assignees?: string[];
+  status?: PRState;
+}
 
 export interface PullRequest {
   id: string;
@@ -30,7 +42,7 @@ export interface PullRequest {
   creationDate: string;
   lastModified?: string;
   status: PRState;
-  reviewer: Reviewer[];
+  reviewer?: Reviewer[];
   labels: string[];
   tasks: Tasks;
 
@@ -133,16 +145,4 @@ export interface Commit {
 export interface CommitStatus {
   id: number;
   description: string;
-}
-
-export interface PRCreateParams extends PRUpdateParams {
-  source: string;
-  target: string;
-}
-
-export interface PRUpdateParams {
-  title: string;
-  description?: string;
-  assignees?: string[];
-  status?: PRState;
 }
