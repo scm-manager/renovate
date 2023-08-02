@@ -119,8 +119,11 @@ export class ScmmClient {
       },
     });
   }
+}
 
-  public async getFileContent(
+/*
+
+public async getFileContent(
     repoPath: string,
     revision: string,
     filepath: string
@@ -139,9 +142,8 @@ export class ScmmClient {
   private urlEscape(raw: string): string {
     return encodeURIComponent(raw);
   }
-}
 
-/*export async function searchRepos(
+export async function searchRepos(
   options: OptionsOfJSONResponseBody
 ): Promise<Repo[]> {
   const url = `${API_PATH}/repositories?pageSize=9999&page=0`;
