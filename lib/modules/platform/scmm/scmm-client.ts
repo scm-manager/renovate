@@ -1,24 +1,21 @@
 import type {
-  Branch,
-  Comment,
-  CommitStatus,
   PullRequest,
   PullRequestCreateParams,
   PullRequestUpdateParams,
   Repo,
-  RepoContents,
   User,
   PullRequestPage,
   Page,
   Link,
 } from './types';
-import got, { OptionsOfJSONResponseBody } from 'got';
 import type { AxiosInstance } from 'axios';
 import axios from 'axios';
 
 const URLS = {
   ME: 'me',
   REPO: (repoPath: string) => `repositories/${repoPath}`,
+  REPOFILE: (repoPath: string, revision: string, escapedFilePath: string) =>
+    `${URLS.REPO(repoPath)}/content/${revision}/${escapedFilePath}`,
   PULLREQUESTS: (repoPath: string) => `pull-requests/${repoPath}`,
   PULLREQUESTBYID: (repoPath: string, id: number) =>
     `pull-requests/${repoPath}/${id}`,
@@ -122,36 +119,35 @@ export class ScmmClient {
       },
     });
   }
+
+  public async getFileContent(
+    repoPath: string,
+    revision: string,
+    filepath: string
+  ): Promise<string> {
+    const response = await this.httpClient.get(
+      URLS.REPOFILE(repoPath, revision, this.urlEscape(filepath)),
+      {
+        responseType: 'arraybuffer',
+      }
+    );
+
+    //TODO what happens with a binary file
+    return Buffer.from(response.data, 'base64').toString();
+  }
+
+  private urlEscape(raw: string): string {
+    return encodeURIComponent(raw);
+  }
 }
 
-const API_PATH = 'unsinn';
-const urlEscape = (raw: string): string => encodeURIComponent(raw);
-
-export async function searchRepos(
+/*export async function searchRepos(
   options: OptionsOfJSONResponseBody
 ): Promise<Repo[]> {
   const url = `${API_PATH}/repositories?pageSize=9999&page=0`;
   const res = await got(url, options).json();
 
   return Promise.resolve(res._embedded.repositories);
-}
-
-export async function getRepoContents(
-  repoPath: string,
-  filePath: string,
-  ref: string | null,
-  options: OptionsOfJSONResponseBody
-): Promise<RepoContents> {
-  const url = `${API_PATH}/repositories/${repoPath}/content/${ref}/${urlEscape(
-    filePath
-  )}`;
-  const res = await got(url, options).json();
-
-  if (res.body.content) {
-    res.body.contentString = Buffer.from(res.body.content, 'base64').toString();
-  }
-
-  return Promise.resolve(res);
 }
 
 export async function closePR(
@@ -234,4 +230,4 @@ export async function getBranch(
       author: { username: 'test', displayName: 'test' },
     },
   };
-}
+}*/

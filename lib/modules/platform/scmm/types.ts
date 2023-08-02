@@ -114,12 +114,6 @@ export interface Repo {
 //TODO are these types correct?
 export type RepoType = 'git' | 'svn' | 'mercurial';
 
-export interface RepoContents {
-  path: string;
-  content?: string;
-  contentString?: string;
-}
-
 export interface Comment {
   id: number;
   body: string;
