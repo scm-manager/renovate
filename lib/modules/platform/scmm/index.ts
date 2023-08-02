@@ -144,14 +144,13 @@ export async function getPr(number: number): Promise<Pr | null> {
 }
 
 export async function getPrList(): Promise<Pr[]> {
-  //TODO is this caching "smart" enough, do we need to invalidate it at some point?
   if (config.prList === null) {
     config.prList = (await scmmClient.getAllRepoPrs(config.repository)).map(
       (pr) => mapPrFromScmToRenovate(pr)
     );
   }
 
-  return config.prList || [];
+  return config.prList ?? [];
 }
 
 export async function createPr({
