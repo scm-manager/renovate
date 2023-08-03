@@ -19,8 +19,6 @@ import { mapPrFromScmToRenovate } from './mapper';
 import { smartTruncate } from '../utils/pr-body';
 import { sanitize } from '../../../util/sanitize';
 
-//TODO Error Handling
-
 interface SCMMRepoConfig {
   repository: string;
   prList: Pr[] | null;
@@ -89,6 +87,14 @@ export async function initRepo({
   };
 
   logger.info(`Repo initialized: ${JSON.stringify(result)}`);
+
+  return result;
+}
+
+export async function getRepos(): Promise<string[]> {
+  const repos = await scmmClient.getAllRepos();
+  const result = repos.map((repo) => `${repo.namespace}/${repo.name}`);
+  logger.info(`Discoverd ${repos.length} repos: ${result}`);
 
   return result;
 }
@@ -210,129 +216,3 @@ export function massageMarkdown(prBody: string): string {
 export async function getRepoForceRebase(): Promise<boolean> {
   return false;
 }
-
-/*const platform: Platform = {
-
-export async function getRawFile(
-  fileName: string,
-  repoName: string,
-  branchOrTag: string
-): Promise<string | null> {
-  return scmmClient?.getFileContent(repoName, branchOrTag, fileName) ?? null;
-}
-
-export async function getJsonFile(
-  fileName: string,
-  repoName?: string,
-  branchOrTag?: string
-): Promise<any | null> {
-  if (!repoName || !branchOrTag) {
-    throw new Error(
-      `Missing repoName ${repoName} or branchOrTag ${branchOrTag}`
-    );
-  }
-
-  const raw = await getRawFile(fileName, repoName, branchOrTag);
-
-  if (!raw) {
-    throw new Error(
-      `Could not find file ${fileName} in repo ${repoName} for revision ${branchOrTag}`
-    );
-  }
-
-  return JSON.parse(raw);
-}
-
-export async function getRepos(): Promise<string[]> {
-  logger.debug('Auto-discovering Gitea repositories');
-  try {
-    const repos = await helper.searchRepos(defaultOptions);
-    return repos.map((r) => r.namespace + '/' + r.name);
-  } catch (err) {
-    logger.error({ err }, 'SCM-Manager getRepos() error');
-    throw err;
-  }
-
-  throw new Error('Not implemented');
-}
-,
-
-  async setBranchStatus({
-    branchName,
-    context,
-    description,
-    state,
-    url: target_url,
-  }: BranchStatusConfig): Promise<void> {
-    // Nothing
-  },
-
-  async getBranchStatus(
-    branchName: string,
-    internalChecksAsSuccess: boolean
-  ): Promise<BranchStatus> {
-    // Nothing
-  },
-
-  async getBranchStatusCheck(
-    branchName: string,
-    context: string
-  ): Promise<BranchStatus | null> {
-    // Nothing
-  },
-
-  ,
-
-
-
-  async mergePr({ id }: MergePRConfig): Promise<boolean> {
-    try {
-      await helper.mergePR(config.repository, id, {});
-      return true;
-    } catch (err) {
-      logger.warn({ err, id }, 'Merging of PR failed');
-      return false;
-    }
-  },
-
- ,
-
-  async getIssue(number: number, memCache = true): Promise<Issue | null> {
-    return Promise.resolve(null);
-  },
-
-  ,
-
-  ,
-
-
-  async deleteLabel(issue: number, labelName: string): Promise<void> {
-    // Nothing
-  },
-
-  async ensureComment({
-    number: issue,
-    topic,
-    content,
-  }: EnsureCommentConfig): Promise<boolean> {
-    // Nothing
-  },
-
-  async ensureCommentRemoval(
-    deleteConfig: EnsureCommentRemovalConfig
-  ): Promise<void> {
-    // Nothing
-  },
-
-  async addAssignees(number: number, assignees: string[]): Promise<void> {
-    // Nothing
-  },
-
-  async addReviewers(number: number, reviewers: string[]): Promise<void> {
-    // Nothing
-  },
-
-  ,
-};
-
-*/

@@ -45,9 +45,6 @@ export interface PullRequest {
   reviewer?: Reviewer[];
   labels: string[];
   tasks: Tasks;
-
-  //TODO more properties available
-
   _links: Links;
   _embedded: {
     defaultConfig: {
@@ -96,6 +93,10 @@ export type CommitStatusType =
   | 'failure'
   | 'warning'
   | 'unknown';
+
+export interface RepoPage {
+  repositories: Repo[];
+}
 
 export interface Repo {
   contact: string;
