@@ -7,12 +7,14 @@ import type {
   PullRequestPage,
   Page,
   Link,
+  RepoPage,
 } from './types';
 import type { AxiosInstance } from 'axios';
 import axios from 'axios';
 
 const URLS = {
   ME: 'me',
+  ALLREPOS: 'repositories',
   REPO: (repoPath: string) => `repositories/${repoPath}`,
   REPOFILE: (repoPath: string, revision: string, escapedFilePath: string) =>
     `${URLS.REPO(repoPath)}/content/${revision}/${escapedFilePath}`,
@@ -25,7 +27,7 @@ const CONTENT_TYPES = {
   PULLREQUESTS: 'application/vnd.scmm-pullrequest+json;v=2',
 };
 
-//TODO Error Handling
+//TODO Wrap axios error, so that the axios dependency does not leak to users of the ScmmClient
 export class ScmmClient {
   private httpClient: AxiosInstance;
 
@@ -58,6 +60,14 @@ export class ScmmClient {
     return response.data;
   }
 
+  public async getAllRepos(): Promise<Repo[]> {
+    const response = await this.httpClient.get<Page<RepoPage>>(URLS.ALLREPOS, {
+      params: { pageSize: 1000000 },
+    });
+
+    return response.data._embedded.repositories;
+  }
+
   public async getDefaultBranch(repo: Repo): Promise<string> {
     const defaultBranchUrl = repo._links['defaultBranch'] as Link;
     const response = await this.httpClient.get<{ defaultBranch: string }>(
@@ -72,8 +82,7 @@ export class ScmmClient {
     const response = await this.httpClient.get<Page<PullRequestPage>>(
       URLS.PULLREQUESTS(repoPath),
       {
-        //TODO is pageSize 9999 good enough?
-        params: { status: 'ALL', pageSize: 9999 },
+        params: { status: 'ALL', pageSize: 1000000 },
       }
     );
     return response.data._embedded.pullRequests;
@@ -122,7 +131,14 @@ export class ScmmClient {
 }
 
 /*
+export async function searchRepos(
+  options: OptionsOfJSONResponseBody
+): Promise<Repo[]> {
+  const url = `${API_PATH}/repositories?pageSize=9999&page=0`;
+  const res = await got(url, options).json();
 
+  return Promise.resolve(res._embedded.repositories);
+}
 public async getFileContent(
     repoPath: string,
     revision: string,
@@ -143,14 +159,7 @@ public async getFileContent(
     return encodeURIComponent(raw);
   }
 
-export async function searchRepos(
-  options: OptionsOfJSONResponseBody
-): Promise<Repo[]> {
-  const url = `${API_PATH}/repositories?pageSize=9999&page=0`;
-  const res = await got(url, options).json();
 
-  return Promise.resolve(res._embedded.repositories);
-}
 
 export async function closePR(
   repoPath: string,
