@@ -13,7 +13,7 @@ import type {
   UpdatePrConfig,
 } from '../types';
 import { repoFingerprint } from '../util';
-import { ScmmClient } from './scmm-client';
+import { ScmClient } from './scm-client';
 import { getRepoUrl, matchPrState, smartLinks } from './utils';
 import { mapPrFromScmToRenovate } from './mapper';
 import { smartTruncate } from '../utils/pr-body';
@@ -28,7 +28,7 @@ interface SCMMRepoConfig {
 export const id = 'scmm';
 
 let config: SCMMRepoConfig = {} as any;
-let scmmClient: ScmmClient;
+let scmmClient: ScmClient;
 
 export async function initPlatform({
   endpoint,
@@ -46,7 +46,7 @@ export async function initPlatform({
     );
   }
 
-  scmmClient = new ScmmClient(endpoint, token);
+  scmmClient = new ScmClient(endpoint, token);
 
   const me = await scmmClient.getCurrentUser();
   const gitAuthor = `${me.displayName ?? me.username} <${me.mail}>`;

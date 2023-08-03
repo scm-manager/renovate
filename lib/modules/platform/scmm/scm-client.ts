@@ -28,7 +28,7 @@ const CONTENT_TYPES = {
 };
 
 //TODO Wrap axios error, so that the axios dependency does not leak to users of the ScmmClient
-export class ScmmClient {
+export class ScmClient {
   private httpClient: AxiosInstance;
 
   constructor(endpoint: string, token: string) {
