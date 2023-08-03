@@ -18,6 +18,7 @@ import { getRepoUrl, matchPrState, smartLinks } from './utils';
 import { mapPrFromScmToRenovate } from './mapper';
 import { smartTruncate } from '../utils/pr-body';
 import { sanitize } from '../../../util/sanitize';
+import * as hostRules from '../../../util/host-rules';
 
 interface SCMMRepoConfig {
   repository: string;
@@ -63,7 +64,12 @@ export async function initRepo({
 }: RepoParams): Promise<RepoResult> {
   const repo = await scmmClient.getRepo(repository);
   const defaultBranch = await scmmClient.getDefaultBranch(repo);
-  const url = getRepoUrl(repo, gitUrl, scmmClient.getEndpoint());
+  const url = getRepoUrl(
+    repo,
+    gitUrl,
+    hostRules.find({ hostType: id, url: scmmClient.getEndpoint() }).username ??
+      ''
+  );
 
   config = {} as any;
   config.repository = repository;
