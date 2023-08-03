@@ -13,7 +13,7 @@ import type {
   UpdatePrConfig,
 } from '../types';
 import { repoFingerprint } from '../util';
-import { ScmClient } from './scm-client';
+import ScmClient from './scm-client';
 import { getRepoUrl, matchPrState, smartLinks } from './utils';
 import { mapPrFromScmToRenovate } from './mapper';
 import { smartTruncate } from '../utils/pr-body';
@@ -36,15 +36,11 @@ export async function initPlatform({
   token,
 }: PlatformParams): Promise<PlatformResult> {
   if (!endpoint) {
-    throw new Error(
-      'Init Platform: You must configure a SCM-Manager endpoint base path'
-    );
+    throw new Error('SCM-Manager endpoint not configured');
   }
 
   if (!token) {
-    throw new Error(
-      'Init Platform: You must configure a SCM-Manager personal api key'
-    );
+    throw new Error('SCM-Manager api token not configured');
   }
 
   scmmClient = new ScmClient(endpoint, token);
