@@ -141,3 +141,5 @@ export interface CommitStatus {
   id: number;
   description: string;
 }
+
+export type PrFilterByState = 'open' | 'closed' | '!open' | 'all';
