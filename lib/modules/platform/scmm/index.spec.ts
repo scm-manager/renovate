@@ -42,7 +42,7 @@ const GITEA_VERSION = '1.14.0+dev-754-g5d2b7ba63';
 
 describe('modules/platform/gitea/index', () => {
   let gitea: Platform;
-  let helper: jest.Mocked<typeof import('./scmm-client')>;
+  let helper: jest.Mocked<typeof import('./scm-client')>;
   let logger: jest.Mocked<typeof _logger>;
   let gitvcs: jest.Mocked<typeof _git>;
   let hostRules: jest.Mocked<typeof import('../../../util/host-rules')>;
@@ -204,7 +204,7 @@ describe('modules/platform/gitea/index', () => {
     jest.mock('../../../logger');
 
     gitea = await import('.');
-    helper = mocked(await import('./scmm-client'));
+    helper = mocked(await import('./scm-client'));
     logger = mocked((await import('../../../logger')).logger);
     gitvcs = require('../../../util/git');
     gitvcs.isBranchBehindBase.mockResolvedValue(false);
