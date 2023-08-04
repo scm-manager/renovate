@@ -10,7 +10,6 @@ import {
   invalidatePrCache,
 } from './index';
 import type {
-  PRState,
   PrFilterByState,
   PullRequest,
   PullRequestCreateParams,
@@ -22,7 +21,7 @@ import * as _hostRules from '../../../util/host-rules';
 import * as _git from '../../../util/git';
 import * as _util from '../util';
 import { mocked } from '../../../../test/util';
-import type { CreatePRConfig, Pr } from '../types';
+import type { Pr } from '../types';
 import { mapPrFromScmToRenovate } from './mapper';
 
 jest.mock('../../../util/host-rules');
