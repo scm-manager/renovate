@@ -77,7 +77,7 @@ export async function initRepo({
   });
 
   // Reset cached resources
-  config.prList = null;
+  invalidatePrCache();
 
   const result = {
     defaultBranch: config.defaultBranch,
@@ -139,13 +139,14 @@ export async function getPr(number: number): Promise<Pr | null> {
     return cachedPr;
   }
 
-  const result = mapPrFromScmToRenovate(
-    await scmmClient.getRepoPr(config.repository, number)
-  );
+  const result = await scmmClient.getRepoPr(config.repository, number);
+  if (!result) {
+    logger.info(`Not found PR with id ${number}`);
+    return null;
+  }
 
   logger.info(`Returning PR from API, ${JSON.stringify(result)}`);
-
-  return result;
+  return mapPrFromScmToRenovate(result);
 }
 
 export async function getPrList(): Promise<Pr[]> {
@@ -217,4 +218,8 @@ export function massageMarkdown(prBody: string): string {
 
 export async function getRepoForceRebase(): Promise<boolean> {
   return false;
+}
+
+export async function invalidatePrCache() {
+  config.prList = null;
 }
