@@ -1,6 +1,12 @@
 import * as httpMock from '../../../../test/http-mock';
 import ScmClient from './scm-client';
-import type { PullRequest, PullRequestCreateParams, Repo, User } from './types';
+import type {
+  PullRequest,
+  PullRequestCreateParams,
+  PullRequestUpdateParams,
+  Repo,
+  User,
+} from './types';
 
 describe('modules/platform/scmm/scm-client', () => {
   const endpoint = 'http://localhost:8080/scm/api/v2';
@@ -267,6 +273,53 @@ describe('modules/platform/scmm/scm-client', () => {
           scmClient.createPr(`${repo.namespace}/${repo.name}`, {
             source: 'feature/test',
             target: 'develop',
+            title: 'Test Title',
+            description: 'PR description',
+            assignees: ['Test assignee'],
+            status: 'OPEN',
+          })
+        ).rejects.toThrow();
+      }
+    );
+  });
+
+  describe(scmClient.updatePr, () => {
+    it('should update pr for a repo', async () => {
+      const expectedUpdateParams: PullRequestUpdateParams = {
+        title: 'Test Title',
+        description: 'PR description',
+        assignees: ['Test assignee'],
+        status: 'OPEN',
+      };
+
+      const expectedPrId = 1337;
+
+      httpMock
+        .scope(endpoint)
+        .put(`/pull-requests/${repo.namespace}/${repo.name}/${expectedPrId}`)
+        .reply(204);
+
+      expect(
+        await scmClient.updatePr(
+          `${repo.namespace}/${repo.name}`,
+          expectedPrId,
+          expectedUpdateParams
+        )
+      ).not.toThrow;
+    });
+
+    it.each([[400], [401], [403], [404], [500]])(
+      'should throw %p response',
+      async (response: number) => {
+        const expectedPrId = 1337;
+
+        httpMock
+          .scope(endpoint)
+          .put(`/pull-requests/${repo.namespace}/${repo.name}/${expectedPrId}`)
+          .reply(response);
+
+        await expect(
+          scmClient.updatePr(`${repo.namespace}/${repo.name}`, expectedPrId, {
             title: 'Test Title',
             description: 'PR description',
             assignees: ['Test assignee'],
