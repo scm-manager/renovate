@@ -88,19 +88,12 @@ export default class ScmClient {
     return response.data._embedded.pullRequests;
   }
 
-  public async getRepoPr(
-    repoPath: string,
-    id: number
-  ): Promise<PullRequest | null> {
-    try {
-      const response = await this.httpClient.get<PullRequest>(
-        URLS.PULLREQUESTBYID(repoPath, id)
-      );
+  public async getRepoPr(repoPath: string, id: number): Promise<PullRequest> {
+    const response = await this.httpClient.get<PullRequest>(
+      URLS.PULLREQUESTBYID(repoPath, id)
+    );
 
-      return response.data;
-    } catch (error) {
-      return null;
-    }
+    return response.data;
   }
 
   public async createPr(
