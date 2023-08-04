@@ -4,6 +4,7 @@ import type { PullRequest as SCMPullRequest } from './types';
 export function mapPrFromScmToRenovate(pr: SCMPullRequest): RenovatePr {
   return {
     sourceBranch: pr.source,
+    targetBranch: pr.target,
     createdAt: pr.creationDate,
     closedAt: pr.closeDate,
     hasAssignees: pr.reviewer !== undefined && pr.reviewer.length > 0,
