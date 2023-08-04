@@ -1,5 +1,7 @@
 import { logger } from '../../../logger';
 import * as git from '../../../util/git';
+import * as hostRules from '../../../util/host-rules';
+import { sanitize } from '../../../util/sanitize';
 import type {
   CreatePRConfig,
   EnsureIssueConfig,
@@ -13,12 +15,10 @@ import type {
   UpdatePrConfig,
 } from '../types';
 import { repoFingerprint } from '../util';
+import { smartTruncate } from '../utils/pr-body';
+import { mapPrFromScmToRenovate } from './mapper';
 import ScmClient from './scm-client';
 import { getRepoUrl, matchPrState, smartLinks } from './utils';
-import { mapPrFromScmToRenovate } from './mapper';
-import { smartTruncate } from '../utils/pr-body';
-import { sanitize } from '../../../util/sanitize';
-import * as hostRules from '../../../util/host-rules';
 
 interface SCMMRepoConfig {
   repository: string;
@@ -46,7 +46,7 @@ export async function initPlatform({
   scmmClient = new ScmClient(endpoint, token);
 
   const me = await scmmClient.getCurrentUser();
-  const gitAuthor = `${me.displayName ?? me.username} <${me.mail}>`;
+  const gitAuthor = `${me.displayName ?? me.username} <${me.mail ?? ''}>`;
   const result = { endpoint, gitAuthor };
 
   logger.info(`Plattform initialized ${JSON.stringify(result)}`);
@@ -96,7 +96,7 @@ export async function initRepo({
 export async function getRepos(): Promise<string[]> {
   const repos = await scmmClient.getAllRepos();
   const result = repos.map((repo) => `${repo.namespace}/${repo.name}`);
-  logger.info(`Discoverd ${repos.length} repos: ${result}`);
+  logger.info(`Discoverd ${repos.length} repos`);
 
   return result;
 }
@@ -124,7 +124,9 @@ export async function findPr({
   }
 
   logger.info(
-    `Could not find PR with source branch ${branchName} and title ${prTitle} and state ${state}`
+    `Could not find PR with source branch ${branchName} and title ${
+      prTitle ?? ''
+    } and state ${state}`
   );
 
   return null;
@@ -195,20 +197,21 @@ export async function updatePr({
   logger.info(`Updated Pr #${number} with title ${prTitle}`);
 }
 
-export async function findIssue(title: string): Promise<Issue | null> {
+export function findIssue(title: string): Promise<Issue | null> {
   logger.debug('NO-OP findIssue');
-  return null;
+  return Promise.resolve(null);
 }
 
-export async function ensureIssue(
+export function ensureIssue(
   config: EnsureIssueConfig
 ): Promise<'updated' | 'created' | null> {
   logger.debug('NO-OP ensureIssue');
-  return null;
+  return Promise.resolve(null);
 }
 
-export async function ensureIssueClosing(title: string): Promise<void> {
+export function ensureIssueClosing(title: string): Promise<void> {
   logger.debug('NO-OP ensureIssueClosing');
+  return Promise.resolve();
 }
 
 export function massageMarkdown(prBody: string): string {
@@ -216,10 +219,10 @@ export function massageMarkdown(prBody: string): string {
   return smartTruncate(smartLinks(prBody), 1000000);
 }
 
-export async function getRepoForceRebase(): Promise<boolean> {
-  return false;
+export function getRepoForceRebase(): Promise<boolean> {
+  return Promise.resolve(false);
 }
 
-export async function invalidatePrCache() {
+export function invalidatePrCache(): void {
   config.prList = null;
 }

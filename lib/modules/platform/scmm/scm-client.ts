@@ -1,16 +1,16 @@
-import type {
-  PullRequest,
-  PullRequestCreateParams,
-  PullRequestUpdateParams,
-  Repo,
-  User,
-  PullRequestPage,
-  Page,
-  Link,
-  RepoPage,
-} from './types';
 import type { AxiosInstance } from 'axios';
 import axios from 'axios';
+import type {
+  Link,
+  Page,
+  PullRequest,
+  PullRequestCreateParams,
+  PullRequestPage,
+  PullRequestUpdateParams,
+  Repo,
+  RepoPage,
+  User,
+} from './types';
 
 const URLS = {
   ME: 'me',
@@ -111,7 +111,8 @@ export default class ScmClient {
     );
 
     const getCreatedPrResponse = await this.httpClient.get<PullRequest>(
-      createPrResponse.headers.location
+      createPrResponse.headers.location,
+      { baseURL: undefined }
     );
 
     return getCreatedPrResponse.data;
@@ -121,7 +122,7 @@ export default class ScmClient {
     repoPath: string,
     id: number,
     params: PullRequestUpdateParams
-  ) {
+  ): Promise<void> {
     await this.httpClient.put(URLS.PULLREQUESTBYID(repoPath, id), params, {
       headers: {
         'Content-Type': CONTENT_TYPES.PULLREQUESTS,
