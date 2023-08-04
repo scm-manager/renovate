@@ -1,8 +1,8 @@
-import ScmClient from './scm-client';
-import type { Repo, User } from './types';
 import * as httpMock from '../../../../test/http-mock';
+import ScmClient from './scm-client';
+import type { PullRequest, PullRequestCreateParams, Repo, User } from './types';
 
-describe(ScmClient, () => {
+describe('modules/platform/scmm/scm-client', () => {
   const endpoint = 'http://localhost:8080/scm/api/v2';
   const token = 'validApiToken';
 
@@ -25,6 +25,26 @@ describe(ScmClient, () => {
       ],
       defaultBranch: {
         href: `${endpoint}/config/git/default/repo/default-branch`,
+      },
+    },
+  };
+
+  const pullRequest: PullRequest = {
+    id: '1337',
+    author: { displayName: 'Thomas Zerr', username: 'tzerr' },
+    source: 'feature/test',
+    target: 'develop',
+    title: 'The PullRequest',
+    description: 'Another PullRequest',
+    creationDate: '2023-08-02T10:48:24.762Z',
+    status: 'OPEN',
+    labels: [],
+    tasks: { todo: 2, done: 4 },
+    _links: {},
+    _embedded: {
+      defaultConfig: {
+        mergeStrategy: 'SQUASH',
+        deleteBranchOnMerge: true,
       },
     },
   };
@@ -85,7 +105,7 @@ describe(ScmClient, () => {
   });
 
   describe(scmClient.getAllRepos, () => {
-    it('should return the repo', async () => {
+    it('should return all repos', async () => {
       httpMock
         .scope(endpoint)
         .get('/repositories?pageSize=1000000')
@@ -112,7 +132,7 @@ describe(ScmClient, () => {
   });
 
   describe(scmClient.getDefaultBranch, () => {
-    it('should return the repo', async () => {
+    it('should return the default branch', async () => {
       httpMock
         .scope(endpoint)
         .get('/config/git/default/repo/default-branch')
@@ -120,7 +140,7 @@ describe(ScmClient, () => {
           defaultBranch: 'develop',
         });
 
-      expect(await scmClient.getDefaultBranch(repo)).toEqual('develop');
+      expect(await scmClient.getDefaultBranch(repo)).toBe('develop');
     });
 
     it.each([[401], [403], [404], [500]])(
@@ -132,6 +152,127 @@ describe(ScmClient, () => {
           .reply(response);
 
         await expect(scmClient.getDefaultBranch(repo)).rejects.toThrow();
+      }
+    );
+  });
+
+  describe(scmClient.getAllRepoPrs, () => {
+    it('should return all repo prs', async () => {
+      httpMock
+        .scope(endpoint)
+        .get(
+          `/pull-requests/${repo.namespace}/${repo.name}?status=ALL&pageSize=1000000`
+        )
+        .reply(200, {
+          page: 0,
+          pageTotal: 1,
+          _embedded: {
+            pullRequests: [pullRequest],
+          },
+        });
+
+      expect(
+        await scmClient.getAllRepoPrs(`${repo.namespace}/${repo.name}`)
+      ).toEqual([pullRequest]);
+    });
+
+    it.each([[401], [403], [404], [500]])(
+      'should throw %p response',
+      async (response: number) => {
+        httpMock
+          .scope(endpoint)
+          .get(
+            `/pull-requests/${repo.namespace}/${repo.name}?status=ALL&pageSize=1000000`
+          )
+          .reply(response);
+
+        await expect(
+          scmClient.getAllRepoPrs(`${repo.namespace}/${repo.name}`)
+        ).rejects.toThrow();
+      }
+    );
+  });
+
+  describe(scmClient.getRepoPr, () => {
+    it('should return the repo pr', async () => {
+      httpMock
+        .scope(endpoint)
+        .get(`/pull-requests/${repo.namespace}/${repo.name}/${pullRequest.id}`)
+        .reply(200, pullRequest);
+
+      expect(
+        await scmClient.getRepoPr(`${repo.namespace}/${repo.name}`, 1337)
+      ).toEqual(pullRequest);
+    });
+
+    it.each([[401], [403], [404], [500]])(
+      'should throw %p response',
+      async (response: number) => {
+        httpMock
+          .scope(endpoint)
+          .get(
+            `/pull-requests/${repo.namespace}/${repo.name}/${pullRequest.id}`
+          )
+          .reply(response);
+
+        await expect(
+          scmClient.getRepoPr(`${repo.namespace}/${repo.name}`, 1337)
+        ).rejects.toThrow();
+      }
+    );
+  });
+
+  describe(scmClient.createPr, () => {
+    it('should create pr for a repo', async () => {
+      const expectedCreateParams: PullRequestCreateParams = {
+        source: 'feature/test',
+        target: 'develop',
+        title: 'Test Title',
+        description: 'PR description',
+        assignees: ['Test assignee'],
+        status: 'OPEN',
+      };
+
+      const expectedPrId = 1337;
+
+      httpMock
+        .scope(endpoint)
+        .post(`/pull-requests/${repo.namespace}/${repo.name}`)
+        .reply(201, undefined, {
+          location: `${endpoint}/pull-requests/${repo.namespace}/${repo.name}/${expectedPrId}`,
+        });
+
+      httpMock
+        .scope(endpoint)
+        .get(`/pull-requests/${repo.namespace}/${repo.name}/${expectedPrId}`)
+        .reply(200, pullRequest);
+
+      expect(
+        await scmClient.createPr(
+          `${repo.namespace}/${repo.name}`,
+          expectedCreateParams
+        )
+      ).toEqual(pullRequest);
+    });
+
+    it.each([[400], [401], [403], [404], [500]])(
+      'should throw %p response',
+      async (response: number) => {
+        httpMock
+          .scope(endpoint)
+          .post(`/pull-requests/${repo.namespace}/${repo.name}`)
+          .reply(response);
+
+        await expect(
+          scmClient.createPr(`${repo.namespace}/${repo.name}`, {
+            source: 'feature/test',
+            target: 'develop',
+            title: 'Test Title',
+            description: 'PR description',
+            assignees: ['Test assignee'],
+            status: 'OPEN',
+          })
+        ).rejects.toThrow();
       }
     );
   });

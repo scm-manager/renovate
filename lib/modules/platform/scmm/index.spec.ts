@@ -1,3 +1,17 @@
+import { mocked } from '../../../../test/util';
+import * as _git from '../../../util/git';
+import * as _hostRules from '../../../util/host-rules';
+import type { Pr } from '../types';
+import * as _util from '../util';
+import { mapPrFromScmToRenovate } from './mapper';
+import ScmClient from './scm-client';
+import type {
+  PrFilterByState,
+  PullRequest,
+  PullRequestCreateParams,
+  Repo,
+  User,
+} from './types';
 import {
   createPr,
   ensureIssue,
@@ -12,20 +26,6 @@ import {
   initRepo,
   invalidatePrCache,
 } from './index';
-import type {
-  PrFilterByState,
-  PullRequest,
-  PullRequestCreateParams,
-  Repo,
-  User,
-} from './types';
-import ScmClient from './scm-client';
-import * as _hostRules from '../../../util/host-rules';
-import * as _git from '../../../util/git';
-import * as _util from '../util';
-import { mocked } from '../../../../test/util';
-import type { Pr } from '../types';
-import { mapPrFromScmToRenovate } from './mapper';
 
 jest.mock('../../../util/host-rules');
 const hostRules: jest.Mocked<typeof _hostRules> = mocked(_hostRules);
@@ -85,7 +85,7 @@ const pullRequest: PullRequest = {
 
 const renovatePr: Pr = mapPrFromScmToRenovate(pullRequest);
 
-describe('scmm index', () => {
+describe('modules/platform/scmm/index', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     invalidatePrCache();
@@ -128,7 +128,9 @@ describe('scmm index', () => {
         .mockResolvedValueOnce(expectedDefaultBranch);
 
       hostRules.find.mockReturnValueOnce({ username: user.username });
-      git.initRepo.mockImplementationOnce(async () => {});
+      git.initRepo.mockImplementationOnce(() => {
+        return Promise.resolve();
+      });
       util.repoFingerprint.mockReturnValueOnce(expectedFingerprint);
 
       expect(
@@ -139,7 +141,7 @@ describe('scmm index', () => {
         repoFingerprint: expectedFingerprint,
       });
 
-      expect(git.initRepo).toBeCalledWith({
+      expect(git.initRepo).toHaveBeenCalledWith({
         url: `http://${user.username}@localhost:8080/scm/default/repo`,
         repository,
         defaultBranch: expectedDefaultBranch,
@@ -286,11 +288,8 @@ describe('scmm index', () => {
         jest
           .spyOn(ScmClient.prototype, 'createPr')
           .mockImplementationOnce(
-            async (
-              _repoPath: string,
-              createParams: PullRequestCreateParams
-            ) => {
-              return {
+            (_repoPath: string, createParams: PullRequestCreateParams) => {
+              return Promise.resolve({
                 id: '1337',
                 source: createParams.source,
                 target: createParams.target,
@@ -307,7 +306,7 @@ describe('scmm index', () => {
                     deleteBranchOnMerge: false,
                   },
                 },
-              };
+              });
             }
           );
 
@@ -337,19 +336,19 @@ describe('scmm index', () => {
 
   describe(findIssue, () => {
     it('should no op', async () => {
-      expect(await findIssue('title')).toEqual(null);
+      expect(await findIssue('title')).toBeNull();
     });
   });
 
   describe(ensureIssue, () => {
     it('should no op', async () => {
-      expect(await ensureIssue({ title: 'title', body: 'body' })).toEqual(null);
+      expect(await ensureIssue({ title: 'title', body: 'body' })).toBeNull();
     });
   });
 
   describe(getRepoForceRebase, () => {
     it('should no op', async () => {
-      expect(await getRepoForceRebase()).toEqual(false);
+      expect(await getRepoForceRebase()).toBe(false);
     });
   });
 });
