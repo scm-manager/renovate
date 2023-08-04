@@ -1,9 +1,12 @@
 import {
   createPr,
+  ensureIssue,
+  findIssue,
   findPr,
   getBranchPr,
   getPr,
   getPrList,
+  getRepoForceRebase,
   getRepos,
   initPlatform,
   initRepo,
@@ -332,5 +335,23 @@ describe('scmm index', () => {
         });
       }
     );
+  });
+
+  describe(findIssue, () => {
+    it('should no op', async () => {
+      expect(await findIssue('title')).toEqual(null);
+    });
+  });
+
+  describe(ensureIssue, () => {
+    it('should no op', async () => {
+      expect(await ensureIssue({ title: 'title', body: 'body' })).toEqual(null);
+    });
+  });
+
+  describe(getRepoForceRebase, () => {
+    it('should no op', async () => {
+      expect(await getRepoForceRebase()).toEqual(false);
+    });
   });
 });
