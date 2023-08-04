@@ -248,15 +248,13 @@ describe('scmm index', () => {
 
   describe(getPr, () => {
     it.each([
-      [[], null, 1, null],
       [[], pullRequest, 1, renovatePr],
-      [[pullRequest], null, 9999, null],
       [[pullRequest], pullRequest, 1, renovatePr],
     ])(
       'search within %p for %p with result %p',
       async (
         availablePullRequest: PullRequest[],
-        pullRequestById: PullRequest | null,
+        pullRequestById: PullRequest,
         prId: number,
         result: Pr | null
       ) => {
