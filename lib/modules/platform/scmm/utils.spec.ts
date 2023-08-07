@@ -81,6 +81,7 @@ describe('modules/platform/scmm/utils', () => {
     };
 
     const username = 'tzerr';
+    const password = 'password';
     const gitHttpEndpoint = 'http://localhost:8081/scm/repo/default/repo';
     const gitSshEndpoint = 'ssh://localhost:2222/scm/repo/default/repo';
 
@@ -88,7 +89,7 @@ describe('modules/platform/scmm/utils', () => {
       'should throw error for option %p, because protocol links are missing',
       (gitUrl: string | undefined) => {
         expect(() =>
-          getRepoUrl(repo, gitUrl as GitUrlOption, username)
+          getRepoUrl(repo, gitUrl as GitUrlOption, username, password)
         ).toThrow('MISSING_PROTOCOL_LINKS');
       }
     );
@@ -101,7 +102,8 @@ describe('modules/platform/scmm/utils', () => {
             _links: { protocol: [{ name: 'http', href: gitHttpEndpoint }] },
           },
           'ssh',
-          username
+          username,
+          password
         )
       ).toThrow('MISSING_SSH_LINK');
     });
@@ -114,7 +116,8 @@ describe('modules/platform/scmm/utils', () => {
             _links: { protocol: [{ name: 'ssh', href: gitSshEndpoint }] },
           },
           'ssh',
-          username
+          username,
+          password
         )
       ).toEqual(gitSshEndpoint);
     });
@@ -129,7 +132,8 @@ describe('modules/platform/scmm/utils', () => {
               _links: { protocol: [{ name: 'ssh', href: gitSshEndpoint }] },
             },
             gitUrl as GitUrlOption | undefined,
-            username
+            username,
+            password
           )
         ).toThrow('MISSING_HTTP_LINK');
       }
@@ -145,7 +149,8 @@ describe('modules/platform/scmm/utils', () => {
               _links: { protocol: [{ name: 'http', href: 'invalid url' }] },
             },
             gitUrl as GitUrlOption | undefined,
-            username
+            username,
+            password
           )
         ).toThrow('MALFORMED_HTTP_LINK');
       }
@@ -161,9 +166,10 @@ describe('modules/platform/scmm/utils', () => {
               _links: { protocol: [{ name: 'http', href: gitHttpEndpoint }] },
             },
             gitUrl as GitUrlOption | undefined,
-            username
+            username,
+            password
           )
-        ).toBe('http://tzerr@localhost:8081/scm/repo/default/repo');
+        ).toBe('http://tzerr:password@localhost:8081/scm/repo/default/repo');
       }
     );
   });

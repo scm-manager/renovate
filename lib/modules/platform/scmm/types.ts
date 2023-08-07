@@ -79,7 +79,6 @@ export interface Tasks {
   done: number;
 }
 
-//TODO are these values correct
 export type PRMergeMethod =
   | 'MERGE_COMMIT'
   | 'REBASE'
@@ -112,8 +111,7 @@ export interface Repo {
   _links: Links;
 }
 
-//TODO are these types correct?
-export type RepoType = 'git' | 'svn' | 'mercurial';
+export type RepoType = 'git' | 'svn' | 'hg';
 
 export interface Comment {
   id: number;
