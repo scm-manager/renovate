@@ -64,7 +64,8 @@ export async function initRepo({
     repo,
     gitUrl,
     hostRules.find({ hostType: id, url: scmmClient.getEndpoint() }).username ??
-      ''
+      '',
+    process.env.RENOVATE_TOKEN ?? '',
   );
 
   config = {} as any;

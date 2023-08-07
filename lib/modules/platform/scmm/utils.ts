@@ -35,7 +35,8 @@ export function smartLinks(body: string): string {
 export function getRepoUrl(
   repo: Repo,
   gitUrl: GitUrlOption | undefined,
-  username: string
+  username: string,
+  password: string
 ): string {
   const protocolLinks = repo._links.protocol as Link[] | undefined;
   if (!protocolLinks) {
@@ -65,6 +66,7 @@ export function getRepoUrl(
   }
 
   repoUrl.username = username;
+  repoUrl.password = password;
   return repoUrl.toString();
 }
 
