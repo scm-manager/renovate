@@ -97,7 +97,7 @@ export async function initRepo({
 export async function getRepos(): Promise<string[]> {
   const repos = await scmmClient.getAllRepos();
   const result = repos.map((repo) => `${repo.namespace}/${repo.name}`);
-  logger.info(`Discoverd ${repos.length} repos`);
+  logger.info(`Discovered ${repos.length} repos`);
 
   return result;
 }
@@ -124,7 +124,7 @@ export async function findPr({
     return result;
   }
 
-  logger.info(
+  logger.debug(
     `Could not find PR with source branch ${branchName} and title ${
       prTitle ?? ''
     } and state ${state}`
@@ -177,7 +177,8 @@ export async function createPr({
     status: draftPR ? 'DRAFT' : 'OPEN',
   });
 
-  logger.info(`Pr Created ${JSON.stringify(createdPr)}`);
+  logger.info(`Pr Created with title '${createdPr.title}' from source '${createdPr.source}' to target '${createdPr.target}'`);
+  logger.debug(`Pr Created ${JSON.stringify(createdPr)}`);
 
   return mapPrFromScmToRenovate(createdPr);
 }
@@ -216,8 +217,7 @@ export function ensureIssueClosing(title: string): Promise<void> {
 }
 
 export function massageMarkdown(prBody: string): string {
-  //TODO which length for len
-  return smartTruncate(smartLinks(prBody), 1000000);
+  return smartTruncate(smartLinks(prBody), 10000);
 }
 
 export function getRepoForceRebase(): Promise<boolean> {

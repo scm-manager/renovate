@@ -14,13 +14,10 @@ import type {
 } from './types';
 import {
   createPr,
-  ensureIssue,
-  findIssue,
   findPr,
   getBranchPr,
   getPr,
   getPrList,
-  getRepoForceRebase,
   getRepos,
   initPlatform,
   initRepo,
@@ -332,23 +329,5 @@ describe('modules/platform/scmm/index', () => {
         });
       }
     );
-  });
-
-  describe(findIssue, () => {
-    it('should no op', async () => {
-      expect(await findIssue('title')).toBeNull();
-    });
-  });
-
-  describe(ensureIssue, () => {
-    it('should no op', async () => {
-      expect(await ensureIssue({ title: 'title', body: 'body' })).toBeNull();
-    });
-  });
-
-  describe(getRepoForceRebase, () => {
-    it('should no op', async () => {
-      expect(await getRepoForceRebase()).toBe(false);
-    });
   });
 });
