@@ -4,6 +4,7 @@ import * as hostRules from '../../../util/host-rules';
 import { sanitize } from '../../../util/sanitize';
 import type {
   CreatePRConfig,
+  EnsureCommentConfig,
   EnsureIssueConfig,
   FindPRConfig,
   Issue,
@@ -65,7 +66,7 @@ export async function initRepo({
     gitUrl,
     hostRules.find({ hostType: id, url: scmmClient.getEndpoint() }).username ??
       '',
-    process.env.RENOVATE_TOKEN ?? '',
+    process.env.RENOVATE_TOKEN ?? ''
   );
 
   config = {} as any;
@@ -177,7 +178,9 @@ export async function createPr({
     status: draftPR ? 'DRAFT' : 'OPEN',
   });
 
-  logger.info(`Pr Created with title '${createdPr.title}' from source '${createdPr.source}' to target '${createdPr.target}'`);
+  logger.info(
+    `Pr Created with title '${createdPr.title}' from source '${createdPr.source}' to target '${createdPr.target}'`
+  );
   logger.debug(`Pr Created ${JSON.stringify(createdPr)}`);
 
   return mapPrFromScmToRenovate(createdPr);
@@ -214,6 +217,10 @@ export function ensureIssue(
 export function ensureIssueClosing(title: string): Promise<void> {
   logger.debug('NO-OP ensureIssueClosing');
   return Promise.resolve();
+}
+
+export function ensureComment(config: EnsureCommentConfig): Promise<boolean> {
+  return Promise.resolve(false);
 }
 
 export function massageMarkdown(prBody: string): string {

@@ -305,7 +305,7 @@ describe('modules/platform/scmm/scm-client', () => {
           expectedPrId,
           expectedUpdateParams
         )
-      ).not.toThrow;
+      ).not.toThrow();
     });
 
     it.each([[400], [401], [403], [404], [500]])(
