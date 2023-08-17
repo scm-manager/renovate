@@ -21,4 +21,4 @@ api.set(gitea.id, gitea);
 api.set(github.id, github);
 api.set(gitlab.id, gitlab);
 api.set(local.id, local);
-api.set(scmm.id, scmm)
+api.set(scmm.id, scmm);

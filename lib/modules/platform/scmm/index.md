@@ -11,4 +11,3 @@ Then let Renovate use your API Key by setting the `RENOVATE_TOKEN` environment v
 You must set `platform=scmm` in your Renovate config file.
 
 The Bot account must have the `OWNER` role for a repository
-
