@@ -299,13 +299,22 @@ describe('modules/platform/scmm/scm-client', () => {
         .put(`/pull-requests/${repo.namespace}/${repo.name}/${expectedPrId}`)
         .reply(204);
 
-      expect(
+      /*expect(
         await scmClient.updatePr(
           `${repo.namespace}/${repo.name}`,
           expectedPrId,
           expectedUpdateParams
         )
-      ).not.toThrow();
+      ).not.toThrow();*/
+      await expect(
+        scmClient.updatePr(
+          `${repo.namespace}/${repo.name}`,
+          expectedPrId,
+          expectedUpdateParams
+        )
+      ).resolves.not.toThrowError();
+
+
     });
 
     it.each([[400], [401], [403], [404], [500]])(

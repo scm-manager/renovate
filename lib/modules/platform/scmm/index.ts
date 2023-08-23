@@ -96,7 +96,7 @@ export async function initRepo({
 }
 
 export async function getRepos(): Promise<string[]> {
-  const repos = await scmmClient.getAllRepos();
+  const repos = (await scmmClient.getAllRepos()).filter(repo => repo.type === 'git');
   const result = repos.map((repo) => `${repo.namespace}/${repo.name}`);
   logger.info(`Discovered ${repos.length} repos`);
 
