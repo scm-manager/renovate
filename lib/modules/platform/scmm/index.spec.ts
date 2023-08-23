@@ -153,6 +153,8 @@ describe('modules/platform/scmm/index', () => {
         .mockResolvedValueOnce([
           repo,
           { ...repo, namespace: 'other', name: 'repository' },
+          { ...repo, namespace: 'other', name: 'mercurial', type: 'hg'},
+          { ...repo, namespace: 'other', name: 'subversion', type: 'svn'}
         ]);
 
       expect(await getRepos()).toEqual(['default/repo', 'other/repository']);
