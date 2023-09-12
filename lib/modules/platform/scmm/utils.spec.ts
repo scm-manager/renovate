@@ -52,7 +52,7 @@ describe('modules/platform/scmm/utils', () => {
       [{ ...defaultPr, state: 'OPEN' }, '!open', false],
       [{ ...defaultPr, state: 'DRAFT' }, '!open', false],
       [{ ...defaultPr, state: 'MERGED' }, '!open', true],
-      [{ ...defaultPr, state: 'REJECTED' }, '!open', false],
+      [{ ...defaultPr, state: 'REJECTED' }, '!open', true],
       [{ ...defaultPr, state: 'OPEN' }, 'closed', false],
       [{ ...defaultPr, state: 'DRAFT' }, 'closed', false],
       [{ ...defaultPr, state: 'MERGED' }, 'closed', true],
