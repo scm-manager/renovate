@@ -10,11 +10,11 @@ export function matchPrState(pr: Pr, state: PrFilterByState): boolean {
     return true;
   }
 
-  if (state === 'open' && pr.state === 'OPEN') {
+  if (state === 'open' && (pr.state === 'OPEN' || pr.state === 'DRAFT')) {
     return true;
   }
 
-  if (state === '!open' && pr.state === 'MERGED') {
+  if (state === '!open' && (pr.state === 'MERGED' || pr.state === 'REJECTED')) {
     return true;
   }
 
