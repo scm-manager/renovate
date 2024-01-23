@@ -3,11 +3,12 @@ import * as git from '../../../util/git';
 import * as hostRules from '../../../util/host-rules';
 import { sanitize } from '../../../util/sanitize';
 import type {
+  BranchStatusConfig,
   CreatePRConfig,
-  EnsureCommentConfig,
+  EnsureCommentConfig, EnsureCommentRemovalConfigByContent, EnsureCommentRemovalConfigByTopic,
   EnsureIssueConfig,
   FindPRConfig,
-  Issue,
+  Issue, MergePRConfig,
   PlatformParams,
   PlatformResult,
   Pr,
@@ -20,6 +21,7 @@ import { smartTruncate } from '../utils/pr-body';
 import { mapPrFromScmToRenovate } from './mapper';
 import ScmClient from './scm-client';
 import { getRepoUrl, matchPrState, smartLinks } from './utils';
+import type {BranchStatus} from "../../../types";
 
 interface SCMMRepoConfig {
   repository: string;
@@ -202,6 +204,46 @@ export async function updatePr({
   logger.info(`Updated Pr #${number} with title ${prTitle}`);
 }
 
+export function mergePr(config: MergePRConfig): Promise<boolean> {
+  logger.debug('NO-OP mergePr');
+  return Promise.resolve(false);
+}
+
+export function getBranchStatus(branchName: string, internalChecksAsSuccess: boolean): Promise<BranchStatus> {
+  logger.debug('NO-OP getBranchStatus');
+  return Promise.resolve('red');
+}
+
+export function setBranchStatus(branchStatusConfig: BranchStatusConfig): Promise<void> {
+  logger.debug('NO-OP setBranchStatus');
+  return Promise.resolve();
+}
+
+export function getBranchStatusCheck(branchName: string, context: string | null | undefined): Promise<BranchStatus | null> {
+  logger.debug('NO-OP setBranchStatus');
+  return Promise.resolve(null);
+}
+
+export function addReviewers(number: number, reviewers: string[]): Promise<void> {
+  logger.debug('NO-OP addReviewers');
+  return Promise.resolve();
+}
+
+export function addAssignees(number: number, assignees: string[]): Promise<void> {
+  logger.debug('NO-OP addAssignees');
+  return Promise.resolve();
+}
+
+export function deleteLabel(number: number, label: string): Promise<void> {
+  logger.debug('NO-OP deleteLabel');
+  return Promise.resolve();
+}
+
+export function getIssueList(): Promise<Issue[]> {
+  logger.debug('NO-OP getIssueList');
+  return Promise.resolve([]);
+}
+
 export function findIssue(title: string): Promise<Issue | null> {
   logger.debug('NO-OP findIssue');
   return Promise.resolve(null);
@@ -220,7 +262,13 @@ export function ensureIssueClosing(title: string): Promise<void> {
 }
 
 export function ensureComment(config: EnsureCommentConfig): Promise<boolean> {
+  logger.debug('NO-OP ensureComment');
   return Promise.resolve(false);
+}
+
+export function ensureCommentRemoval(ensureCommentRemoval: EnsureCommentRemovalConfigByTopic | EnsureCommentRemovalConfigByContent): Promise<void> {
+  logger.debug('NO-OP ensureCommentRemoval');
+  return Promise.resolve();
 }
 
 export function massageMarkdown(prBody: string): string {
@@ -229,6 +277,16 @@ export function massageMarkdown(prBody: string): string {
 
 export function getRepoForceRebase(): Promise<boolean> {
   return Promise.resolve(false);
+}
+
+export function getRawFile(fileName: string, repoName?: string, branchOrTag?: string): Promise<string | null> {
+  logger.debug('NO-OP getRawFile');
+  return Promise.resolve(null);
+}
+
+export function getJsonFile(fileName: string, repoName?: string, branchOrTag?: string): Promise<any> {
+  logger.debug('NO-OP getJsonFile');
+  return Promise.resolve(undefined);
 }
 
 export function invalidatePrCache(): void {
