@@ -36,7 +36,7 @@ export function getRepoUrl(
   repo: Repo,
   gitUrl: GitUrlOption | undefined,
   username: string,
-  password: string
+  password: string,
 ): string {
   const protocolLinks = repo._links.protocol as Link[] | undefined;
   if (!protocolLinks) {
@@ -71,7 +71,7 @@ export function getRepoUrl(
 }
 
 export function getMergeMethod(
-  strategy: MergeStrategy | undefined
+  strategy: MergeStrategy | undefined,
 ): PRMergeMethod | null {
   switch (strategy) {
     case 'fast-forward':

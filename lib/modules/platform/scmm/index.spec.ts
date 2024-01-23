@@ -91,13 +91,13 @@ describe('modules/platform/scmm/index', () => {
   describe(initPlatform, () => {
     it('should throw error, because endpoint is not configured', async () => {
       await expect(initPlatform({ token })).rejects.toThrow(
-        'SCM-Manager endpoint not configured'
+        'SCM-Manager endpoint not configured',
       );
     });
 
     it('should throw error, because token is not configured', async () => {
       await expect(initPlatform({ endpoint })).rejects.toThrow(
-        'SCM-Manager api token not configured'
+        'SCM-Manager api token not configured',
       );
     });
 
@@ -131,7 +131,7 @@ describe('modules/platform/scmm/index', () => {
       util.repoFingerprint.mockReturnValueOnce(expectedFingerprint);
 
       expect(
-        await initRepo({ repository: `${repo.namespace}/${repo.name}` })
+        await initRepo({ repository: `${repo.namespace}/${repo.name}` }),
       ).toEqual({
         defaultBranch: expectedDefaultBranch,
         isFork: false,
@@ -153,8 +153,8 @@ describe('modules/platform/scmm/index', () => {
         .mockResolvedValueOnce([
           repo,
           { ...repo, namespace: 'other', name: 'repository' },
-          { ...repo, namespace: 'other', name: 'mercurial', type: 'hg'},
-          { ...repo, namespace: 'other', name: 'subversion', type: 'svn'}
+          { ...repo, namespace: 'other', name: 'mercurial', type: 'hg' },
+          { ...repo, namespace: 'other', name: 'subversion', type: 'svn' },
         ]);
 
       expect(await getRepos()).toEqual(['default/repo', 'other/repository']);
@@ -213,16 +213,20 @@ describe('modules/platform/scmm/index', () => {
         branchName: string,
         prTitle: string | null | undefined,
         state: string,
-        result: Pr | null
+        result: Pr | null,
       ) => {
         jest
           .spyOn(ScmClient.prototype, 'getAllRepoPrs')
           .mockResolvedValueOnce(availablePullRequest);
 
         expect(
-          await findPr({ branchName, prTitle, state: state as PrFilterByState })
+          await findPr({
+            branchName,
+            prTitle,
+            state: state as PrFilterByState,
+          }),
         ).toEqual(result);
-      }
+      },
     );
   });
 
@@ -236,14 +240,14 @@ describe('modules/platform/scmm/index', () => {
       async (
         availablePullRequest: PullRequest[],
         branchName: string,
-        result: Pr | null
+        result: Pr | null,
       ) => {
         jest
           .spyOn(ScmClient.prototype, 'getAllRepoPrs')
           .mockResolvedValueOnce(availablePullRequest);
 
         expect(await getBranchPr(branchName)).toEqual(result);
-      }
+      },
     );
   });
 
@@ -257,7 +261,7 @@ describe('modules/platform/scmm/index', () => {
         availablePullRequest: PullRequest[],
         pullRequestById: PullRequest,
         prId: number,
-        result: Pr | null
+        result: Pr | null,
       ) => {
         jest
           .spyOn(ScmClient.prototype, 'getAllRepoPrs')
@@ -268,7 +272,7 @@ describe('modules/platform/scmm/index', () => {
           .mockResolvedValueOnce(pullRequestById);
 
         expect(await getPr(prId)).toEqual(result);
-      }
+      },
     );
   });
 
@@ -282,7 +286,7 @@ describe('modules/platform/scmm/index', () => {
       async (
         draftPR: boolean | undefined,
         expectedState: string,
-        expectedIsDraft: boolean
+        expectedIsDraft: boolean,
       ) => {
         jest
           .spyOn(ScmClient.prototype, 'createPr')
@@ -306,7 +310,7 @@ describe('modules/platform/scmm/index', () => {
                   },
                 },
               });
-            }
+            },
           );
 
         expect(
@@ -316,7 +320,7 @@ describe('modules/platform/scmm/index', () => {
             prTitle: 'PR Title',
             prBody: 'PR Body',
             draftPR,
-          })
+          }),
         ).toEqual({
           sourceBranch: 'feature/test',
           targetBranch: 'develop',
@@ -329,7 +333,7 @@ describe('modules/platform/scmm/index', () => {
           reviewers: [],
           state: expectedState,
         });
-      }
+      },
     );
   });
 });

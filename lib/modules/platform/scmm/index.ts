@@ -1,14 +1,18 @@
 import { logger } from '../../../logger';
+import type { BranchStatus } from '../../../types';
 import * as git from '../../../util/git';
 import * as hostRules from '../../../util/host-rules';
 import { sanitize } from '../../../util/sanitize';
 import type {
   BranchStatusConfig,
   CreatePRConfig,
-  EnsureCommentConfig, EnsureCommentRemovalConfigByContent, EnsureCommentRemovalConfigByTopic,
+  EnsureCommentConfig,
+  EnsureCommentRemovalConfigByContent,
+  EnsureCommentRemovalConfigByTopic,
   EnsureIssueConfig,
   FindPRConfig,
-  Issue, MergePRConfig,
+  Issue,
+  MergePRConfig,
   PlatformParams,
   PlatformResult,
   Pr,
@@ -21,7 +25,6 @@ import { smartTruncate } from '../utils/pr-body';
 import { mapPrFromScmToRenovate } from './mapper';
 import ScmClient from './scm-client';
 import { getRepoUrl, matchPrState, smartLinks } from './utils';
-import type {BranchStatus} from "../../../types";
 
 interface SCMMRepoConfig {
   repository: string;
@@ -68,7 +71,7 @@ export async function initRepo({
     gitUrl,
     hostRules.find({ hostType: id, url: scmmClient.getEndpoint() }).username ??
       '',
-    process.env.RENOVATE_TOKEN ?? ''
+    process.env.RENOVATE_TOKEN ?? '',
   );
 
   config = {} as any;
@@ -88,7 +91,7 @@ export async function initRepo({
     isFork: false,
     repoFingerprint: repoFingerprint(
       config.repository,
-      scmmClient.getEndpoint()
+      scmmClient.getEndpoint(),
     ),
   };
 
@@ -98,7 +101,9 @@ export async function initRepo({
 }
 
 export async function getRepos(): Promise<string[]> {
-  const repos = (await scmmClient.getAllRepos()).filter(repo => repo.type === 'git');
+  const repos = (await scmmClient.getAllRepos()).filter(
+    (repo) => repo.type === 'git',
+  );
   const result = repos.map((repo) => `${repo.namespace}/${repo.name}`);
   logger.info(`Discovered ${repos.length} repos`);
 
@@ -119,7 +124,7 @@ export async function findPr({
     (pr) =>
       branchName === pr.sourceBranch &&
       (!prTitle || prTitle === pr.title) &&
-      matchPrState(pr, state)
+      matchPrState(pr, state),
   );
 
   if (result) {
@@ -130,7 +135,7 @@ export async function findPr({
   logger.debug(
     `Could not find PR with source branch ${branchName} and title ${
       prTitle ?? ''
-    } and state ${state}`
+    } and state ${state}`,
   );
 
   return null;
@@ -158,7 +163,7 @@ export async function getPr(number: number): Promise<Pr | null> {
 export async function getPrList(): Promise<Pr[]> {
   if (config.prList === null) {
     config.prList = (await scmmClient.getAllRepoPrs(config.repository)).map(
-      (pr) => mapPrFromScmToRenovate(pr)
+      (pr) => mapPrFromScmToRenovate(pr),
     );
   }
 
@@ -181,7 +186,7 @@ export async function createPr({
   });
 
   logger.info(
-    `Pr Created with title '${createdPr.title}' from source '${createdPr.source}' to target '${createdPr.target}'`
+    `Pr Created with title '${createdPr.title}' from source '${createdPr.source}' to target '${createdPr.target}'`,
   );
   logger.debug(`Pr Created ${JSON.stringify(createdPr)}`);
 
@@ -209,27 +214,41 @@ export function mergePr(config: MergePRConfig): Promise<boolean> {
   return Promise.resolve(false);
 }
 
-export function getBranchStatus(branchName: string, internalChecksAsSuccess: boolean): Promise<BranchStatus> {
+export function getBranchStatus(
+  branchName: string,
+  internalChecksAsSuccess: boolean,
+): Promise<BranchStatus> {
   logger.debug('NO-OP getBranchStatus');
   return Promise.resolve('red');
 }
 
-export function setBranchStatus(branchStatusConfig: BranchStatusConfig): Promise<void> {
+export function setBranchStatus(
+  branchStatusConfig: BranchStatusConfig,
+): Promise<void> {
   logger.debug('NO-OP setBranchStatus');
   return Promise.resolve();
 }
 
-export function getBranchStatusCheck(branchName: string, context: string | null | undefined): Promise<BranchStatus | null> {
+export function getBranchStatusCheck(
+  branchName: string,
+  context: string | null | undefined,
+): Promise<BranchStatus | null> {
   logger.debug('NO-OP setBranchStatus');
   return Promise.resolve(null);
 }
 
-export function addReviewers(number: number, reviewers: string[]): Promise<void> {
+export function addReviewers(
+  number: number,
+  reviewers: string[],
+): Promise<void> {
   logger.debug('NO-OP addReviewers');
   return Promise.resolve();
 }
 
-export function addAssignees(number: number, assignees: string[]): Promise<void> {
+export function addAssignees(
+  number: number,
+  assignees: string[],
+): Promise<void> {
   logger.debug('NO-OP addAssignees');
   return Promise.resolve();
 }
@@ -250,7 +269,7 @@ export function findIssue(title: string): Promise<Issue | null> {
 }
 
 export function ensureIssue(
-  config: EnsureIssueConfig
+  config: EnsureIssueConfig,
 ): Promise<'updated' | 'created' | null> {
   logger.debug('NO-OP ensureIssue');
   return Promise.resolve(null);
@@ -266,7 +285,11 @@ export function ensureComment(config: EnsureCommentConfig): Promise<boolean> {
   return Promise.resolve(false);
 }
 
-export function ensureCommentRemoval(ensureCommentRemoval: EnsureCommentRemovalConfigByTopic | EnsureCommentRemovalConfigByContent): Promise<void> {
+export function ensureCommentRemoval(
+  ensureCommentRemoval:
+    | EnsureCommentRemovalConfigByTopic
+    | EnsureCommentRemovalConfigByContent,
+): Promise<void> {
   logger.debug('NO-OP ensureCommentRemoval');
   return Promise.resolve();
 }
@@ -279,12 +302,20 @@ export function getRepoForceRebase(): Promise<boolean> {
   return Promise.resolve(false);
 }
 
-export function getRawFile(fileName: string, repoName?: string, branchOrTag?: string): Promise<string | null> {
+export function getRawFile(
+  fileName: string,
+  repoName?: string,
+  branchOrTag?: string,
+): Promise<string | null> {
   logger.debug('NO-OP getRawFile');
   return Promise.resolve(null);
 }
 
-export function getJsonFile(fileName: string, repoName?: string, branchOrTag?: string): Promise<any> {
+export function getJsonFile(
+  fileName: string,
+  repoName?: string,
+  branchOrTag?: string,
+): Promise<any> {
   logger.debug('NO-OP getJsonFile');
   return Promise.resolve(undefined);
 }
