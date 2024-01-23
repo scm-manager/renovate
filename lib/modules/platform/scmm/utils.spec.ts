@@ -21,7 +21,6 @@ describe('modules/platform/scmm/utils', () => {
   });
 
   describe(smartLinks, () => {
-    //TODO add more Test cases
     it.each([
       ['', ''],
       ['](../pull/', '](pulls/'],
