@@ -200,10 +200,11 @@ export async function updatePr({
   state,
   targetBranch,
 }: UpdatePrConfig): Promise<void> {
-  //TODO how to handle state and target branch?
   await scmmClient.updatePr(config.repository, number, {
     title: prTitle,
     description: sanitize(prBody) ?? undefined,
+    target: targetBranch,
+    status: state === 'open' ? 'OPEN' : 'REJECTED',
   });
 
   logger.info(`Updated Pr #${number} with title ${prTitle}`);

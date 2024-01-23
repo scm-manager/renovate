@@ -27,7 +27,6 @@ const CONTENT_TYPES = {
   PULLREQUESTS: 'application/vnd.scmm-pullrequest+json;v=2',
 };
 
-//TODO Wrap axios error, so that the axios dependency does not leak to users of the ScmmClient
 export default class ScmClient {
   private httpClient: AxiosInstance;
 
