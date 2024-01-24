@@ -784,7 +784,7 @@ const options: RenovateOptions[] = [
       'azure',
       'bitbucket',
       'bitbucket-server',
-      'scm-manager',
+      'scmm',
     ],
     globalOnly: true,
   },
