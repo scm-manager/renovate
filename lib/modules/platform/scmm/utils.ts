@@ -5,6 +5,19 @@ import { parseUrl } from '../../../util/url';
 import type { GitUrlOption, Pr } from '../types';
 import type { Link, PRMergeMethod, PrFilterByState, Repo } from './types';
 
+export function mapPrState(
+  state: 'open' | 'closed' | undefined,
+): 'OPEN' | 'REJECTED' | undefined {
+  switch (state) {
+    case 'open':
+      return 'OPEN';
+    case 'closed':
+      return 'REJECTED';
+    default:
+      return undefined;
+  }
+}
+
 export function matchPrState(pr: Pr, state: PrFilterByState): boolean {
   if (state === 'all') {
     return true;

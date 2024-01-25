@@ -16,8 +16,6 @@ const URLS = {
   ME: 'me',
   ALLREPOS: 'repositories',
   REPO: (repoPath: string) => `repositories/${repoPath}`,
-  REPOFILE: (repoPath: string, revision: string, escapedFilePath: string) =>
-    `${URLS.REPO(repoPath)}/content/${revision}/${escapedFilePath}`,
   PULLREQUESTS: (repoPath: string) => `pull-requests/${repoPath}`,
   PULLREQUESTBYID: (repoPath: string, id: number) =>
     `pull-requests/${repoPath}/${id}`,
@@ -42,6 +40,7 @@ export default class ScmClient {
   }
 
   public getEndpoint(): string {
+    /* istanbul ignore next */
     if (!this.httpClient.defaults.baseURL) {
       throw new Error('BaseURL is not defined');
     }

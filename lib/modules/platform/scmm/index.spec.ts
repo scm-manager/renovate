@@ -22,6 +22,7 @@ import {
   initPlatform,
   initRepo,
   invalidatePrCache,
+  updatePr,
 } from './index';
 
 jest.mock('../../../util/host-rules');
@@ -162,6 +163,14 @@ describe('modules/platform/scmm/index', () => {
   });
 
   describe(getPrList, () => {
+    it('should return empty array, because no pr could be found', async () => {
+      jest
+        .spyOn(ScmClient.prototype, 'getAllRepoPrs')
+        .mockRejectedValue(new Error());
+
+      expect(await getPrList()).toIncludeAllMembers([]);
+    });
+
     it('should return all prs of a repo', async () => {
       const expectedResult: Pr[] = [
         {
@@ -190,6 +199,19 @@ describe('modules/platform/scmm/index', () => {
   });
 
   describe(findPr, () => {
+    it('search in pull request without explicitly setting the state as argument', async () => {
+      jest
+        .spyOn(ScmClient.prototype, 'getAllRepoPrs')
+        .mockResolvedValueOnce([pullRequest]);
+
+      expect(
+        await findPr({
+          branchName: pullRequest.source,
+          prTitle: pullRequest.title,
+        }),
+      ).toEqual(renovatePr);
+    });
+
     it.each([
       [[], pullRequest.source, pullRequest.title, 'all', null],
       [[pullRequest], 'invalid branchName', pullRequest.title, 'all', null],
@@ -252,6 +274,18 @@ describe('modules/platform/scmm/index', () => {
   });
 
   describe(getPr, () => {
+    it('should return null, because pr was not found', async () => {
+      jest
+        .spyOn(ScmClient.prototype, 'getAllRepoPrs')
+        .mockResolvedValueOnce([]);
+
+      jest
+        .spyOn(ScmClient.prototype, 'getRepoPr')
+        .mockRejectedValue(new Error('Not found'));
+
+      expect(await getPr(1)).toBeNull();
+    });
+
     it.each([
       [[], pullRequest, 1, renovatePr],
       [[pullRequest], pullRequest, 1, renovatePr],
@@ -332,6 +366,44 @@ describe('modules/platform/scmm/index', () => {
           number: 1337,
           reviewers: [],
           state: expectedState,
+        });
+      },
+    );
+  });
+
+  describe(updatePr, () => {
+    it.each([
+      ['open', 'OPEN', 'prBody', 'prBody'],
+      ['closed', 'REJECTED', 'prBody', 'prBody'],
+      [undefined, undefined, 'prBody', 'prBody'],
+      ['open', 'OPEN', undefined, undefined],
+    ])(
+      'it should update the pr with state %p and prBody %p',
+      async (
+        actualState: string | undefined,
+        expectedState: string | undefined,
+        actualPrBody: string | undefined,
+        expectedPrBody: string | undefined,
+      ) => {
+        jest
+          .spyOn(ScmClient.prototype, 'updatePr')
+          .mockImplementationOnce(() => Promise.resolve());
+
+        await updatePr({
+          number: 1,
+          prTitle: 'PR Title',
+          prBody: actualPrBody,
+          state: actualState as 'open' | 'closed' | undefined,
+          targetBranch: 'Target/Branch',
+        });
+
+        expect(
+          jest.spyOn(ScmClient.prototype, 'updatePr'),
+        ).toHaveBeenCalledWith('default/repo', 1, {
+          description: expectedPrBody,
+          status: expectedState,
+          target: 'Target/Branch',
+          title: 'PR Title',
         });
       },
     );
