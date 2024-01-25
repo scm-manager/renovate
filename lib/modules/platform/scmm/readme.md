@@ -10,4 +10,4 @@ Then let Renovate use your API Key by setting the `RENOVATE_TOKEN` environment v
 
 You must set `platform=scmm` in your Renovate config file.
 
-The technical user needs at least the permissions to read your repository read and create pull request. This can be achieved by granting the permission role "OWNER" to your technical Renovate user. 
+The technical user needs at least the permissions to read your repository read and create pull request. This can be achieved by granting the permission role "OWNER" to your technical Renovate user.
