@@ -16,18 +16,17 @@ describe('modules/platform/scmm/utils', () => {
       'map merge strategy %p on pr merge method %p',
       (strategy: string | undefined, method: string | null) => {
         expect(getMergeMethod(strategy as MergeStrategy)).toEqual(method);
-      }
+      },
     );
   });
 
   describe(smartLinks, () => {
-    //TODO add more Test cases
-    it.each([['', '']])(
-      'adjust %p to smart link %p',
-      (body: string, result: string) => {
-        expect(smartLinks(body)).toEqual(result);
-      }
-    );
+    it.each([
+      ['', ''],
+      ['](../pull/', '](pulls/'],
+    ])('adjust %p to smart link %p', (body: string, result: string) => {
+      expect(smartLinks(body)).toEqual(result);
+    });
   });
 
   describe(matchPrState, () => {
@@ -61,7 +60,7 @@ describe('modules/platform/scmm/utils', () => {
       'match scm pr %p state to pr filter by state %p',
       (pr: Pr, state: string, result: boolean) => {
         expect(matchPrState(pr, state as PrFilterByState)).toEqual(result);
-      }
+      },
     );
   });
 
@@ -89,9 +88,9 @@ describe('modules/platform/scmm/utils', () => {
       'should throw error for option %p, because protocol links are missing',
       (gitUrl: string | undefined) => {
         expect(() =>
-          getRepoUrl(repo, gitUrl as GitUrlOption, username, password)
+          getRepoUrl(repo, gitUrl as GitUrlOption, username, password),
         ).toThrow('MISSING_PROTOCOL_LINKS');
-      }
+      },
     );
 
     it('should throw error because of missing ssh link', () => {
@@ -103,8 +102,8 @@ describe('modules/platform/scmm/utils', () => {
           },
           'ssh',
           username,
-          password
-        )
+          password,
+        ),
       ).toThrow('MISSING_SSH_LINK');
     });
 
@@ -117,8 +116,8 @@ describe('modules/platform/scmm/utils', () => {
           },
           'ssh',
           username,
-          password
-        )
+          password,
+        ),
       ).toEqual(gitSshEndpoint);
     });
 
@@ -133,10 +132,10 @@ describe('modules/platform/scmm/utils', () => {
             },
             gitUrl as GitUrlOption | undefined,
             username,
-            password
-          )
+            password,
+          ),
         ).toThrow('MISSING_HTTP_LINK');
-      }
+      },
     );
 
     it.each([['endpoint'], ['default'], [undefined]])(
@@ -150,10 +149,10 @@ describe('modules/platform/scmm/utils', () => {
             },
             gitUrl as GitUrlOption | undefined,
             username,
-            password
-          )
+            password,
+          ),
         ).toThrow('MALFORMED_HTTP_LINK');
-      }
+      },
     );
 
     it.each([['endpoint'], ['default'], [undefined]])(
@@ -167,10 +166,10 @@ describe('modules/platform/scmm/utils', () => {
             },
             gitUrl as GitUrlOption | undefined,
             username,
-            password
-          )
+            password,
+          ),
         ).toBe('http://tzerr:password@localhost:8081/scm/repo/default/repo');
-      }
+      },
     );
   });
 });

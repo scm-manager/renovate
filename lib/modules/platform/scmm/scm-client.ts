@@ -16,8 +16,6 @@ const URLS = {
   ME: 'me',
   ALLREPOS: 'repositories',
   REPO: (repoPath: string) => `repositories/${repoPath}`,
-  REPOFILE: (repoPath: string, revision: string, escapedFilePath: string) =>
-    `${URLS.REPO(repoPath)}/content/${revision}/${escapedFilePath}`,
   PULLREQUESTS: (repoPath: string) => `pull-requests/${repoPath}`,
   PULLREQUESTBYID: (repoPath: string, id: number) =>
     `pull-requests/${repoPath}/${id}`,
@@ -27,7 +25,6 @@ const CONTENT_TYPES = {
   PULLREQUESTS: 'application/vnd.scmm-pullrequest+json;v=2',
 };
 
-//TODO Wrap axios error, so that the axios dependency does not leak to users of the ScmmClient
 export default class ScmClient {
   private httpClient: AxiosInstance;
 
@@ -43,6 +40,7 @@ export default class ScmClient {
   }
 
   public getEndpoint(): string {
+    /* istanbul ignore next */
     if (!this.httpClient.defaults.baseURL) {
       throw new Error('BaseURL is not defined');
     }
@@ -72,7 +70,7 @@ export default class ScmClient {
     const defaultBranchUrl = repo._links['defaultBranch'] as Link;
     const response = await this.httpClient.get<{ defaultBranch: string }>(
       defaultBranchUrl.href,
-      { baseURL: undefined }
+      { baseURL: undefined },
     );
 
     return response.data.defaultBranch;
@@ -83,14 +81,14 @@ export default class ScmClient {
       URLS.PULLREQUESTS(repoPath),
       {
         params: { status: 'ALL', pageSize: 1000000 },
-      }
+      },
     );
     return response.data._embedded.pullRequests;
   }
 
   public async getRepoPr(repoPath: string, id: number): Promise<PullRequest> {
     const response = await this.httpClient.get<PullRequest>(
-      URLS.PULLREQUESTBYID(repoPath, id)
+      URLS.PULLREQUESTBYID(repoPath, id),
     );
 
     return response.data;
@@ -98,7 +96,7 @@ export default class ScmClient {
 
   public async createPr(
     repoPath: string,
-    params: PullRequestCreateParams
+    params: PullRequestCreateParams,
   ): Promise<PullRequest> {
     const createPrResponse = await this.httpClient.post(
       URLS.PULLREQUESTS(repoPath),
@@ -107,12 +105,12 @@ export default class ScmClient {
         headers: {
           'Content-Type': CONTENT_TYPES.PULLREQUESTS,
         },
-      }
+      },
     );
 
     const getCreatedPrResponse = await this.httpClient.get<PullRequest>(
       createPrResponse.headers.location,
-      { baseURL: undefined }
+      { baseURL: undefined },
     );
 
     return getCreatedPrResponse.data;
@@ -121,7 +119,7 @@ export default class ScmClient {
   public async updatePr(
     repoPath: string,
     id: number,
-    params: PullRequestUpdateParams
+    params: PullRequestUpdateParams,
   ): Promise<void> {
     await this.httpClient.put(URLS.PULLREQUESTBYID(repoPath, id), params, {
       headers: {

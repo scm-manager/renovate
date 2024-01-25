@@ -79,7 +79,7 @@ describe('modules/platform/scmm/scm-client', () => {
       async (response: number) => {
         httpMock.scope(endpoint).get('/me').reply(response);
         await expect(scmClient.getCurrentUser()).rejects.toThrow();
-      }
+      },
     );
   });
 
@@ -91,7 +91,7 @@ describe('modules/platform/scmm/scm-client', () => {
         .reply(200, repo);
 
       expect(await scmClient.getRepo(`${repo.namespace}/${repo.name}`)).toEqual(
-        repo
+        repo,
       );
     });
 
@@ -104,9 +104,9 @@ describe('modules/platform/scmm/scm-client', () => {
           .reply(response);
 
         await expect(
-          scmClient.getRepo(`${repo.namespace}/${repo.name}`)
+          scmClient.getRepo(`${repo.namespace}/${repo.name}`),
         ).rejects.toThrow();
-      }
+      },
     );
   });
 
@@ -133,7 +133,7 @@ describe('modules/platform/scmm/scm-client', () => {
           .reply(response);
 
         await expect(scmClient.getAllRepos()).rejects.toThrow();
-      }
+      },
     );
   });
 
@@ -158,7 +158,7 @@ describe('modules/platform/scmm/scm-client', () => {
           .reply(response);
 
         await expect(scmClient.getDefaultBranch(repo)).rejects.toThrow();
-      }
+      },
     );
   });
 
@@ -167,7 +167,7 @@ describe('modules/platform/scmm/scm-client', () => {
       httpMock
         .scope(endpoint)
         .get(
-          `/pull-requests/${repo.namespace}/${repo.name}?status=ALL&pageSize=1000000`
+          `/pull-requests/${repo.namespace}/${repo.name}?status=ALL&pageSize=1000000`,
         )
         .reply(200, {
           page: 0,
@@ -178,7 +178,7 @@ describe('modules/platform/scmm/scm-client', () => {
         });
 
       expect(
-        await scmClient.getAllRepoPrs(`${repo.namespace}/${repo.name}`)
+        await scmClient.getAllRepoPrs(`${repo.namespace}/${repo.name}`),
       ).toEqual([pullRequest]);
     });
 
@@ -188,14 +188,14 @@ describe('modules/platform/scmm/scm-client', () => {
         httpMock
           .scope(endpoint)
           .get(
-            `/pull-requests/${repo.namespace}/${repo.name}?status=ALL&pageSize=1000000`
+            `/pull-requests/${repo.namespace}/${repo.name}?status=ALL&pageSize=1000000`,
           )
           .reply(response);
 
         await expect(
-          scmClient.getAllRepoPrs(`${repo.namespace}/${repo.name}`)
+          scmClient.getAllRepoPrs(`${repo.namespace}/${repo.name}`),
         ).rejects.toThrow();
-      }
+      },
     );
   });
 
@@ -207,7 +207,7 @@ describe('modules/platform/scmm/scm-client', () => {
         .reply(200, pullRequest);
 
       expect(
-        await scmClient.getRepoPr(`${repo.namespace}/${repo.name}`, 1337)
+        await scmClient.getRepoPr(`${repo.namespace}/${repo.name}`, 1337),
       ).toEqual(pullRequest);
     });
 
@@ -217,14 +217,14 @@ describe('modules/platform/scmm/scm-client', () => {
         httpMock
           .scope(endpoint)
           .get(
-            `/pull-requests/${repo.namespace}/${repo.name}/${pullRequest.id}`
+            `/pull-requests/${repo.namespace}/${repo.name}/${pullRequest.id}`,
           )
           .reply(response);
 
         await expect(
-          scmClient.getRepoPr(`${repo.namespace}/${repo.name}`, 1337)
+          scmClient.getRepoPr(`${repo.namespace}/${repo.name}`, 1337),
         ).rejects.toThrow();
-      }
+      },
     );
   });
 
@@ -256,8 +256,8 @@ describe('modules/platform/scmm/scm-client', () => {
       expect(
         await scmClient.createPr(
           `${repo.namespace}/${repo.name}`,
-          expectedCreateParams
-        )
+          expectedCreateParams,
+        ),
       ).toEqual(pullRequest);
     });
 
@@ -277,9 +277,9 @@ describe('modules/platform/scmm/scm-client', () => {
             description: 'PR description',
             assignees: ['Test assignee'],
             status: 'OPEN',
-          })
+          }),
         ).rejects.toThrow();
-      }
+      },
     );
   });
 
@@ -310,11 +310,9 @@ describe('modules/platform/scmm/scm-client', () => {
         scmClient.updatePr(
           `${repo.namespace}/${repo.name}`,
           expectedPrId,
-          expectedUpdateParams
-        )
-      ).resolves.not.toThrowError();
-
-
+          expectedUpdateParams,
+        ),
+      ).resolves.not.toThrow();
     });
 
     it.each([[400], [401], [403], [404], [500]])(
@@ -333,9 +331,9 @@ describe('modules/platform/scmm/scm-client', () => {
             description: 'PR description',
             assignees: ['Test assignee'],
             status: 'OPEN',
-          })
+          }),
         ).rejects.toThrow();
-      }
+      },
     );
   });
 });

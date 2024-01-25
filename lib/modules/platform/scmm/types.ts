@@ -28,6 +28,7 @@ export interface PullRequestUpdateParams {
   description?: string;
   assignees?: string[];
   status?: PRState;
+  target?: string;
 }
 
 export interface PullRequest {
