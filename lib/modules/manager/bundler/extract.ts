@@ -3,25 +3,83 @@ import { logger } from '../../../logger';
 import { readLocalFile } from '../../../util/fs';
 import { newlineRegex, regEx } from '../../../util/regex';
 import { RubyVersionDatasource } from '../../datasource/ruby-version';
-import { RubyGemsDatasource } from '../../datasource/rubygems';
+import { RubygemsDatasource } from '../../datasource/rubygems';
 import type { PackageDependency, PackageFileContent } from '../types';
 import { delimiters, extractRubyVersion, getLockFilePath } from './common';
 import { extractLockFileEntries } from './locked-version';
 
 function formatContent(input: string): string {
-  return input.replace(regEx(/^ {2}/), '') + '\n'; //remove leading witespace and add a new line at the end
+  return input.replace(regEx(/^ {2}/), '') + '\n'; //remove leading whitespace and add a new line at the end
 }
 
 export async function extractPackageFile(
   content: string,
   packageFile?: string,
 ): Promise<PackageFileContent | null> {
+  let lineNumber: number;
+  async function processGroupBlock(
+    line: string,
+    repositoryUrl?: string,
+    trimGroupLine: boolean = false,
+  ): Promise<void> {
+    const groupMatch = regEx(/^group\s+(.*?)\s+do/).exec(line);
+    if (groupMatch) {
+      const depTypes = groupMatch[1]
+        .split(',')
+        .map((group) => group.trim())
+        .map((group) => group.replace(regEx(/^:/), ''));
+
+      const groupLineNumber = lineNumber;
+      let groupContent = '';
+      let groupLine = '';
+
+      while (
+        lineNumber < lines.length &&
+        (trimGroupLine ? groupLine.trim() !== 'end' : groupLine !== 'end')
+      ) {
+        lineNumber += 1;
+        groupLine = lines[lineNumber];
+
+        // istanbul ignore if
+        if (!is.string(groupLine)) {
+          logger.debug(
+            { content, packageFile, type: 'groupLine' },
+            'Bundler parsing error',
+          );
+          groupLine = 'end';
+        }
+        if (trimGroupLine ? groupLine.trim() !== 'end' : groupLine !== 'end') {
+          groupContent += formatContent(groupLine);
+        }
+      }
+
+      const groupRes = await extractPackageFile(groupContent);
+      if (groupRes) {
+        res.deps = res.deps.concat(
+          groupRes.deps.map((dep) => {
+            const depObject = {
+              ...dep,
+              depTypes,
+              managerData: {
+                lineNumber:
+                  Number(dep.managerData?.lineNumber) + groupLineNumber + 1,
+              },
+            };
+            if (repositoryUrl) {
+              depObject.registryUrls = [repositoryUrl];
+            }
+            return depObject;
+          }),
+        );
+      }
+    }
+  }
   const res: PackageFileContent = {
     registryUrls: [],
     deps: [],
   };
   const lines = content.split(newlineRegex);
-  for (let lineNumber = 0; lineNumber < lines.length; lineNumber += 1) {
+  for (lineNumber = 0; lineNumber < lines.length; lineNumber += 1) {
     const line = lines[lineNumber];
     let sourceMatch: RegExpMatchArray | null = null;
     for (const delimiter of delimiters) {
@@ -58,47 +116,12 @@ export async function extractPackageFile(
         const currentValue = gemMatch.groups.currentValue;
         dep.currentValue = currentValue;
       }
-      dep.datasource = RubyGemsDatasource.id;
+      dep.datasource = RubygemsDatasource.id;
       res.deps.push(dep);
     }
-    const groupMatch = regEx(/^group\s+(.*?)\s+do/).exec(line);
-    if (groupMatch) {
-      const depTypes = groupMatch[1]
-        .split(',')
-        .map((group) => group.trim())
-        .map((group) => group.replace(regEx(/^:/), ''));
-      const groupLineNumber = lineNumber;
-      let groupContent = '';
-      let groupLine = '';
-      while (lineNumber < lines.length && groupLine !== 'end') {
-        lineNumber += 1;
-        groupLine = lines[lineNumber];
-        // istanbul ignore if
-        if (!is.string(groupLine)) {
-          logger.debug(
-            { content, packageFile, type: 'groupLine' },
-            'Bundler parsing error',
-          );
-          groupLine = 'end';
-        }
-        if (groupLine !== 'end') {
-          groupContent += formatContent(groupLine);
-        }
-      }
-      const groupRes = await extractPackageFile(groupContent);
-      if (groupRes) {
-        res.deps = res.deps.concat(
-          groupRes.deps.map((dep) => ({
-            ...dep,
-            depTypes,
-            managerData: {
-              lineNumber:
-                Number(dep.managerData?.lineNumber) + groupLineNumber + 1,
-            },
-          })),
-        );
-      }
-    }
+
+    await processGroupBlock(line);
+
     for (const delimiter of delimiters) {
       const sourceBlockMatch = regEx(
         `^source\\s+${delimiter}(.*?)${delimiter}\\s+do`,
@@ -108,6 +131,7 @@ export async function extractPackageFile(
         const sourceLineNumber = lineNumber;
         let sourceContent = '';
         let sourceLine = '';
+
         while (lineNumber < lines.length && sourceLine.trim() !== 'end') {
           lineNumber += 1;
           sourceLine = lines[lineNumber];
@@ -119,11 +143,16 @@ export async function extractPackageFile(
             );
             sourceLine = 'end';
           }
-          if (sourceLine !== 'end') {
+
+          await processGroupBlock(sourceLine.trim(), repositoryUrl, true);
+
+          if (sourceLine.trim() !== 'end') {
             sourceContent += formatContent(sourceLine);
           }
         }
+
         const sourceRes = await extractPackageFile(sourceContent);
+
         if (sourceRes) {
           res.deps = res.deps.concat(
             sourceRes.deps.map((dep) => ({

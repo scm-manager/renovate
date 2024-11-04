@@ -115,6 +115,7 @@ export async function generateLockFile(
     };
     const execOptions: ExecOptions = {
       cwdFile: lockFileName,
+      userConfiguredEnv: config.env,
       extraEnv,
       toolConstraints: [
         await getNodeToolConstraint(config, upgrades, lockFileDir, lazyPkgJson),
@@ -190,7 +191,7 @@ export async function generateLockFile(
       } catch (err) /* istanbul ignore next */ {
         logger.debug(
           { err, lockFileName },
-          'Error removing package-lock.json for lock file maintenance',
+          'Error removing `package-lock.json` for lock file maintenance',
         );
       }
     }
@@ -233,7 +234,7 @@ export async function generateLockFile(
           if (
             lockFileParsed.packages?.['']?.[depType]?.[lockUpdate.packageName!]
           ) {
-            lockFileParsed.packages[''][depType]![lockUpdate.packageName!] =
+            lockFileParsed.packages[''][depType][lockUpdate.packageName!] =
               lockUpdate.newValue!;
           }
         });
@@ -290,7 +291,11 @@ export function divideWorkspaceAndRootDeps(
       );
 
       // workspaceDir = packageFileDir - lockFileDir
-      const workspaceDir = trimSlashes(packageFileDir.replace(lockFileDir, ''));
+      const workspaceDir = trimSlashes(
+        packageFileDir.startsWith(lockFileDir)
+          ? packageFileDir.slice(lockFileDir.length)
+          : packageFileDir,
+      );
 
       if (is.nonEmptyString(workspaceDir)) {
         let workspaceName: string | undefined;

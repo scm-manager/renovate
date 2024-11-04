@@ -16,7 +16,8 @@ import {
 } from '../../../../constants/error-messages';
 import { logger, removeMeta } from '../../../../logger';
 import { getAdditionalFiles } from '../../../../modules/manager/npm/post-update';
-import { Pr, platform } from '../../../../modules/platform';
+import type { Pr } from '../../../../modules/platform';
+import { platform } from '../../../../modules/platform';
 import {
   ensureComment,
   ensureCommentRemoval,
@@ -36,7 +37,7 @@ import * as template from '../../../../util/template';
 import { isLimitReached } from '../../../global/limits';
 import type { BranchConfig, BranchResult, PrBlockedBy } from '../../../types';
 import { embedChangelogs } from '../../changelog';
-import { ensurePr } from '../pr';
+import { ensurePr, getPlatformPrOptions } from '../pr';
 import { checkAutoMerge } from '../pr/automerge';
 import { setArtifactErrorStatus } from './artifacts';
 import { tryBranchAutomerge } from './automerge';
@@ -145,7 +146,11 @@ export async function processBranch(
     config.rebaseRequested = await rebaseCheck(config, branchPr);
     logger.debug(`PR rebase requested=${config.rebaseRequested}`);
   }
+  const keepUpdatedLabel = config.keepUpdatedLabel;
   const artifactErrorTopic = emojify(':warning: Artifact update problem');
+  const artifactNoticeTopic = emojify(
+    ':information_source: Artifact update notice',
+  );
   try {
     // Check if branch already existed
     const existingPr =
@@ -182,12 +187,21 @@ export async function processBranch(
         result: 'pending',
       };
     }
-    // istanbul ignore if
-    if (!branchExists && config.dependencyDashboardApproval) {
-      if (dependencyDashboardCheck) {
-        logger.debug(`Branch ${config.branchName} is approved for creation`);
-      } else {
-        logger.debug(`Branch ${config.branchName} needs approval`);
+    if (!branchExists) {
+      if (config.mode === 'silent' && !dependencyDashboardCheck) {
+        logger.debug(
+          `Branch ${config.branchName} creation is disabled because mode=silent`,
+        );
+        return {
+          branchExists,
+          prNo: branchPr?.number,
+          result: 'needs-approval',
+        };
+      }
+      if (config.dependencyDashboardApproval && !dependencyDashboardCheck) {
+        logger.debug(
+          `Branch ${config.branchName} creation is disabled because dependencyDashboardApproval=true`,
+        );
         return {
           branchExists,
           prNo: branchPr?.number,
@@ -242,7 +256,10 @@ export async function processBranch(
       }
 
       logger.debug('Checking if PR has been edited');
-      const branchIsModified = await scm.isBranchModified(config.branchName);
+      const branchIsModified = await scm.isBranchModified(
+        config.branchName,
+        config.baseBranch,
+      );
       if (branchPr) {
         logger.debug('Found existing branch PR');
         if (branchPr.state !== 'open') {
@@ -429,6 +446,7 @@ export async function processBranch(
     } else if (
       branchExists &&
       config.rebaseWhen === 'never' &&
+      !(keepUpdatedLabel && branchPr?.labels?.includes(keepUpdatedLabel)) &&
       !dependencyDashboardCheck
     ) {
       logger.debug('rebaseWhen=never so skipping branch update check');
@@ -449,7 +467,7 @@ export async function processBranch(
       );
       config.reuseExistingBranch = false;
     } else {
-      config = { ...config, ...(await shouldReuseExistingBranch(config)) };
+      config = await shouldReuseExistingBranch(config);
     }
     // TODO: types (#22198)
     logger.debug(`Using reuseExistingBranch: ${config.reuseExistingBranch!}`);
@@ -540,6 +558,14 @@ export async function processBranch(
             number: branchPr.number,
             topic: artifactErrorTopic,
           });
+
+          if (!config.artifactNotices?.length) {
+            await ensureCommentRemoval({
+              type: 'by-topic',
+              number: branchPr.number,
+              topic: artifactNoticeTopic,
+            });
+          }
         }
       }
       const forcedManually = userRebaseRequested || !branchExists;
@@ -570,9 +596,22 @@ export async function processBranch(
       await scm.checkoutBranch(config.baseBranch);
       updatesVerified = true;
     }
-    // istanbul ignore if
-    if (branchPr && platform.refreshPr) {
-      await platform.refreshPr(branchPr.number);
+
+    if (branchPr) {
+      const platformPrOptions = getPlatformPrOptions(config);
+      if (
+        platformPrOptions.usePlatformAutomerge &&
+        platform.reattemptPlatformAutomerge
+      ) {
+        await platform.reattemptPlatformAutomerge({
+          number: branchPr.number,
+          platformPrOptions,
+        });
+      }
+      // istanbul ignore if
+      if (platform.refreshPr) {
+        await platform.refreshPr(branchPr.number);
+      }
     }
     if (!commitSha && !branchExists) {
       return {
@@ -636,7 +675,8 @@ export async function processBranch(
       }
       if (
         mergeStatus === 'stale' &&
-        ['conflicted', 'never'].includes(config.rebaseWhen!)
+        ['conflicted', 'never'].includes(config.rebaseWhen!) &&
+        !(keepUpdatedLabel && branchPr?.labels?.includes(keepUpdatedLabel))
       ) {
         logger.warn(
           'Branch cannot automerge because it is behind base branch and rebaseWhen setting disallows rebasing - raising a PR instead',
@@ -849,22 +889,38 @@ export async function processBranch(
             });
           }
         }
-      } else if (config.automerge) {
-        logger.debug('PR is configured for automerge');
-        // skip automerge if there is a new commit since status checks aren't done yet
-        if (config.ignoreTests === true || !commitSha) {
-          logger.debug('checking auto-merge');
-          const prAutomergeResult = await checkAutoMerge(pr, config);
-          if (prAutomergeResult?.automerged) {
-            return {
-              branchExists,
-              result: 'automerged',
-              commitSha,
-            };
-          }
-        }
       } else {
-        logger.debug('PR is not configured for automerge');
+        if (config.artifactNotices?.length) {
+          const contentLines: string[] = [];
+          for (const notice of config.artifactNotices) {
+            contentLines.push(`##### File name: ${notice.file}`);
+            contentLines.push(notice.message);
+          }
+          const content = contentLines.join('\n\n');
+          await ensureComment({
+            number: pr.number,
+            topic: artifactNoticeTopic,
+            content,
+          });
+        }
+
+        if (config.automerge) {
+          logger.debug('PR is configured for automerge');
+          // skip automerge if there is a new commit since status checks aren't done yet
+          if (config.ignoreTests === true || !commitSha) {
+            logger.debug('checking auto-merge');
+            const prAutomergeResult = await checkAutoMerge(pr, config);
+            if (prAutomergeResult?.automerged) {
+              return {
+                branchExists,
+                result: 'automerged',
+                commitSha,
+              };
+            }
+          }
+        } else {
+          logger.debug('PR is not configured for automerge');
+        }
       }
     }
   } catch (err) /* istanbul ignore next */ {

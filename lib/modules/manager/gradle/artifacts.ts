@@ -128,7 +128,7 @@ async function buildUpdateVerificationMetadataCmd(
   if (!hashTypes.length) {
     return null;
   }
-  return `${baseCmd} --write-verification-metadata ${hashTypes.join(',')} help`;
+  return `${baseCmd} --write-verification-metadata ${hashTypes.join(',')} dependencies`;
 }
 
 export async function updateArtifacts({
@@ -181,13 +181,17 @@ export async function updateArtifacts({
     const execOptions: ExecOptions = {
       cwdFile: gradlewFile,
       docker: {},
+      userConfiguredEnv: config.env,
       extraEnv,
       toolConstraints: [
         {
           toolName: 'java',
           constraint:
             config.constraints?.java ??
-            getJavaConstraint(await getGradleVersion(gradlewFile)),
+            (await getJavaConstraint(
+              await getGradleVersion(gradlewFile),
+              gradlewFile,
+            )),
         },
       ],
     };

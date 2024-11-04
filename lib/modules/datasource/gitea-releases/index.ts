@@ -1,4 +1,5 @@
 import { cache } from '../../../util/cache/package/decorator';
+import type { PackageCacheNamespace } from '../../../util/cache/package/types';
 import { GiteaHttp } from '../../../util/http/gitea';
 import { Datasource } from '../datasource';
 import { GiteaTagsDatasource } from '../gitea-tags';
@@ -13,7 +14,14 @@ export class GiteaReleasesDatasource extends Datasource {
 
   static readonly defaultRegistryUrls = ['https://gitea.com'];
 
-  private static readonly cacheNamespace = `datasource-${GiteaReleasesDatasource.id}`;
+  private static readonly cacheNamespace: PackageCacheNamespace = `datasource-${GiteaReleasesDatasource.id}`;
+
+  override readonly releaseTimestampSupport = true;
+  override readonly releaseTimestampNote =
+    'The release timestamp is determined from the `published_at` field in the results.';
+  override readonly sourceUrlSupport = 'package';
+  override readonly sourceUrlNote =
+    'The source URL is determined by using the `packageName` and `registryUrl`.';
 
   constructor() {
     super(GiteaReleasesDatasource.id);

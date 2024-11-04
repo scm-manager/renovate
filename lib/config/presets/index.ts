@@ -10,6 +10,7 @@ import * as packageCache from '../../util/cache/package';
 import { getTtlOverride } from '../../util/cache/package/decorator';
 import { clone } from '../../util/clone';
 import { regEx } from '../../util/regex';
+import * as template from '../../util/template';
 import { GlobalConfig } from '../global';
 import * as massage from '../massage';
 import * as migration from '../migration';
@@ -19,6 +20,7 @@ import { removedPresets } from './common';
 import * as gitea from './gitea';
 import * as github from './github';
 import * as gitlab from './gitlab';
+import * as http from './http';
 import * as internal from './internal';
 import * as local from './local';
 import * as npm from './npm';
@@ -39,6 +41,7 @@ const presetSources: Record<string, PresetApi> = {
   gitea,
   local,
   internal,
+  http,
 };
 
 const presetCacheNamespace = 'preset';
@@ -122,6 +125,8 @@ export function parsePreset(input: string): ParsedPreset {
   } else if (str.startsWith('local>')) {
     presetSource = 'local';
     str = str.substring('local>'.length);
+  } else if (str.startsWith('http://') || str.startsWith('https://')) {
+    presetSource = 'http';
   } else if (
     !str.startsWith('@') &&
     !str.startsWith(':') &&
@@ -138,9 +143,13 @@ export function parsePreset(input: string): ParsedPreset {
       .map((elem) => elem.trim());
     str = str.slice(0, str.indexOf('('));
   }
+  if (presetSource === 'http') {
+    return { presetSource, repo: str, presetName: '', params };
+  }
   const presetsPackages = [
     'compatibility',
     'config',
+    'customManagers',
     'default',
     'docker',
     'group',
@@ -150,7 +159,6 @@ export function parsePreset(input: string): ParsedPreset {
     'npm',
     'packages',
     'preview',
-    'regexManagers',
     'replacements',
     'schedule',
     'security',
@@ -280,15 +288,7 @@ export async function getPreset(
     // preset is just a collection of other presets
     delete presetConfig.description;
   }
-  const packageListKeys = [
-    'description',
-    'matchPackageNames',
-    'excludePackageNames',
-    'matchPackagePatterns',
-    'excludePackagePatterns',
-    'matchPackagePrefixes',
-    'excludePackagePrefixes',
-  ];
+  const packageListKeys = ['description', 'matchPackageNames'];
   if (presetKeys.every((key) => packageListKeys.includes(key))) {
     delete presetConfig.description;
   }
@@ -313,6 +313,10 @@ export async function resolveConfigPresets(
   let config: AllConfig = {};
   // First, merge all the preset configs from left to right
   if (inputConfig.extends?.length) {
+    // Compile templates
+    inputConfig.extends = inputConfig.extends.map((tmpl) =>
+      template.compile(tmpl, {}),
+    );
     for (const preset of inputConfig.extends) {
       if (shouldResolvePreset(preset, existingPresets, ignorePresets)) {
         logger.trace(`Resolving preset "${preset}"`);

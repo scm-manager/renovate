@@ -1,11 +1,5 @@
-import {
-  RenovateConfig,
-  git,
-  logger,
-  mocked,
-  platform,
-  scm,
-} from '../../../../test/util';
+import type { RenovateConfig } from '../../../../test/util';
+import { git, logger, mocked, platform, scm } from '../../../../test/util';
 import { getConfig } from '../../../config/defaults';
 import { GlobalConfig } from '../../../config/global';
 import { CONFIG_VALIDATION } from '../../../constants/error-messages';
@@ -126,10 +120,11 @@ describe('workers/repository/process/index', () => {
 
     it('finds baseBranches via regular expressions', async () => {
       extract.mockResolvedValue({} as never);
-      config.baseBranches = ['/^release\\/.*/', 'dev', '!/^pre-release\\/.*/'];
+      config.baseBranches = ['/^release\\/.*/i', 'dev', '!/^pre-release\\/.*/'];
       git.getBranchList.mockReturnValue([
         'dev',
         'pre-release/v0',
+        'RELEASE/v0',
         'release/v1',
         'release/v2',
         'some-other',
@@ -137,15 +132,24 @@ describe('workers/repository/process/index', () => {
       scm.branchExists.mockResolvedValue(true);
       const res = await extractDependencies(config);
       expect(res).toStrictEqual({
-        branchList: [undefined, undefined, undefined, undefined],
-        branches: [undefined, undefined, undefined, undefined],
+        branchList: [undefined, undefined, undefined, undefined, undefined],
+        branches: [undefined, undefined, undefined, undefined, undefined],
         packageFiles: undefined,
       });
 
       expect(logger.logger.debug).toHaveBeenCalledWith(
-        { baseBranches: ['release/v1', 'release/v2', 'dev', 'some-other'] },
+        {
+          baseBranches: [
+            'RELEASE/v0',
+            'release/v1',
+            'release/v2',
+            'dev',
+            'some-other',
+          ],
+        },
         'baseBranches',
       );
+      expect(addMeta).toHaveBeenCalledWith({ baseBranch: 'RELEASE/v0' });
       expect(addMeta).toHaveBeenCalledWith({ baseBranch: 'release/v1' });
       expect(addMeta).toHaveBeenCalledWith({ baseBranch: 'release/v2' });
       expect(addMeta).toHaveBeenCalledWith({ baseBranch: 'dev' });

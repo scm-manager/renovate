@@ -171,12 +171,14 @@ export async function updateArtifacts({
     const execOptions: ExecOptions = {
       cwdFile: gradlewFile,
       docker: {},
+      userConfiguredEnv: config.env,
       extraEnv,
       toolConstraints: [
         {
           toolName: 'java',
           constraint:
-            config.constraints?.java ?? getJavaConstraint(config.currentValue),
+            config.constraints?.java ??
+            (await getJavaConstraint(config.currentValue, gradlewFile)),
         },
       ],
     };

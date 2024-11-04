@@ -1,9 +1,9 @@
 import { Buffer } from 'node:buffer';
-import {
+import type {
   GetCommentsForPullRequestOutput,
   ListRepositoriesOutput,
-  PullRequestStatusEnum,
 } from '@aws-sdk/client-codecommit';
+import { PullRequestStatusEnum } from '@aws-sdk/client-codecommit';
 import {
   PLATFORM_BAD_CREDENTIALS,
   REPOSITORY_EMPTY,
@@ -306,7 +306,7 @@ export function massageMarkdown(input: string): string {
   return input
     .replace(
       'you tick the rebase/retry checkbox',
-      'rename PR to start with "rebase!"',
+      'PR is renamed to start with "rebase!"',
     )
     .replace(
       'checking the rebase/retry box above',
@@ -320,6 +320,13 @@ export function massageMarkdown(input: string): string {
       regEx(/(?<hiddenComment><!--renovate-(?:debug|config-hash):.*?-->)/g),
       '[//]: # ($<hiddenComment>)',
     );
+}
+
+/**
+ * Unsed, no Dashboard
+ */
+export function maxBodyLength(): number {
+  return Infinity;
 }
 
 export async function getJsonFile(
@@ -346,11 +353,6 @@ export async function getRawFile(
   }
   const buf = Buffer.from(fileRes.fileContent);
   return buf.toString();
-}
-
-/* istanbul ignore next */
-export function getRepoForceRebase(): Promise<boolean> {
-  return Promise.resolve(false);
 }
 
 const AMAZON_MAX_BODY_LENGTH = 10239;
@@ -428,7 +430,7 @@ export async function updatePr({
   if (cachedPr?.state !== prStatusInput) {
     try {
       await client.updatePrStatus(`${prNo}`, prStatusInput);
-    } catch (err) {
+    } catch {
       // safety check
       // do nothing, it's ok to fail sometimes when trying to update from open to open or from closed to closed.
     }

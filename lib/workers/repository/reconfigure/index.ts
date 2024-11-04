@@ -1,5 +1,6 @@
 import is from '@sindresorhus/is';
 import JSON5 from 'json5';
+import { GlobalConfig } from '../../../config/global';
 import type { RenovateConfig } from '../../../config/types';
 import { validateConfig } from '../../../config/validation';
 import { logger } from '../../../logger';
@@ -43,6 +44,13 @@ export async function validateReconfigureBranch(
   config: RenovateConfig,
 ): Promise<void> {
   logger.debug('validateReconfigureBranch()');
+  if (GlobalConfig.get('platform') === 'local') {
+    logger.debug(
+      'Not attempting to reconfigure when running with local platform',
+    );
+    return;
+  }
+
   const context = config.statusCheckNames?.configValidation;
 
   const branchName = getReconfigureBranchName(config.branchPrefix!);
@@ -151,7 +159,7 @@ export async function validateReconfigureBranch(
   }
 
   // perform validation and provide a passing or failing check run based on result
-  const validationResult = await validateConfig(false, configFileParsed);
+  const validationResult = await validateConfig('repo', configFileParsed);
 
   // failing check
   if (validationResult.errors.length > 0) {

@@ -1,11 +1,6 @@
 import is from '@sindresorhus/is';
-import {
-  RenovateConfig,
-  logger,
-  mocked,
-  partial,
-  scm,
-} from '../../../../test/util';
+import type { RenovateConfig } from '../../../../test/util';
+import { logger, mocked, partial, scm } from '../../../../test/util';
 import { getConfig } from '../../../config/defaults';
 import { GlobalConfig } from '../../../config/global';
 import { addMeta } from '../../../logger';
@@ -173,6 +168,9 @@ describe('workers/repository/process/write', () => {
           upgrades: [
             partial<BranchUpgradeConfig>({
               manager: 'unknown-manager',
+              env: {
+                SOME_VAR: 'SOME_VALUE',
+              },
             }),
           ],
         },

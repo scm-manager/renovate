@@ -19,28 +19,14 @@ export function extractPackageFile(
     return null;
   }
 
-  let list = [];
-  try {
-    list = parseYaml(content);
-  } catch (err) {
-    logger.debug(
-      { err, packageFile },
-      'Failed to parse Crossplane package file.',
-    );
-    return null;
-  }
+  // not try and catching this as failureBehaviour is set to filter and therefore it will not throw
+  const list = parseYaml(content, {
+    customSchema: XPKGSchema,
+    failureBehaviour: 'filter',
+  });
 
   const deps: PackageDependency[] = [];
-  for (const item of list) {
-    const parsed = XPKGSchema.safeParse(item);
-    if (!parsed.success) {
-      logger.trace(
-        { item, errors: parsed.error },
-        'Invalid Crossplane package',
-      );
-      continue;
-    }
-    const xpkg = parsed.data;
+  for (const xpkg of list) {
     const dep = getDep(xpkg.spec.package, true, extractConfig?.registryAliases);
     dep.depType = xpkg.kind.toLowerCase();
     deps.push(dep);

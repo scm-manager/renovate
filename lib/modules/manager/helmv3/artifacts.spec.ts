@@ -1,8 +1,5 @@
-import {
-  ECRClient,
-  GetAuthorizationTokenCommand,
-  GetAuthorizationTokenCommandOutput,
-} from '@aws-sdk/client-ecr';
+import type { GetAuthorizationTokenCommandOutput } from '@aws-sdk/client-ecr';
+import { ECRClient, GetAuthorizationTokenCommand } from '@aws-sdk/client-ecr';
 import { mockClient } from 'aws-sdk-client-mock';
 import { mockDeep } from 'jest-mock-extended';
 import { join } from 'upath';
@@ -593,7 +590,7 @@ describe('modules/manager/helmv3/artifacts', () => {
         config: {
           ...config,
           updateType: 'lockFileMaintenance',
-          registryAliases: { stable: 'the_stable_url', repo1: 'the_repo1_url' },
+          registryAliases: { stable: 'the stable_url', repo1: 'the_repo1_url' },
         },
       }),
     ).toMatchObject([

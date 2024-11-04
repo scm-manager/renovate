@@ -1,4 +1,5 @@
-import { ECR, ECRClientConfig } from '@aws-sdk/client-ecr';
+import type { ECRClientConfig } from '@aws-sdk/client-ecr';
+import { ECR } from '@aws-sdk/client-ecr';
 import { logger } from '../../../logger';
 import type { HostRule } from '../../../types';
 import type { HttpError } from '../../../util/http';
@@ -6,7 +7,9 @@ import type { HttpResponse } from '../../../util/http/types';
 import { regEx } from '../../../util/regex';
 import { addSecretForSanitizing } from '../../../util/sanitize';
 
-export const ecrRegex = regEx(/\d+\.dkr\.ecr\.([-a-z0-9]+)\.amazonaws\.com/);
+export const ecrRegex = regEx(
+  /\d+\.dkr\.ecr(?:-fips)?\.([-a-z0-9]+)\.amazonaws\.com/,
+);
 export const ecrPublicRegex = regEx(/public\.ecr\.aws/);
 
 export async function getECRAuthToken(
@@ -14,7 +17,15 @@ export async function getECRAuthToken(
   opts: HostRule,
 ): Promise<string | null> {
   const config: ECRClientConfig = { region };
-  if (opts.username && opts.password) {
+  if (opts.username === `AWS` && opts.password) {
+    logger.trace(
+      `AWS user specified, encoding basic auth credentials for ECR registry`,
+    );
+    return Buffer.from(`AWS:${opts.password}`).toString('base64');
+  } else if (opts.username && opts.password) {
+    logger.trace(
+      `Using AWS accessKey to get Authorization token for ECR registry`,
+    );
     config.credentials = {
       accessKeyId: opts.username,
       secretAccessKey: opts.password,

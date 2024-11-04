@@ -1,5 +1,6 @@
 import is from '@sindresorhus/is';
-import semver, { SemVer } from 'semver';
+import type { SemVer } from 'semver';
+import semver from 'semver';
 import stable from 'semver-stable';
 import { regEx } from '../../../util/regex';
 import type { NewValueConfig, VersioningApi } from '../types';
@@ -71,7 +72,9 @@ function getSatisfyingVersion(
   range: string,
 ): string | null {
   const coercedVersions = versions
-    .map((version) => semver.coerce(version)?.version)
+    .map((version) =>
+      semver.valid(version) ? version : semver.coerce(version)?.version,
+    )
     .filter(is.string);
 
   return semver.maxSatisfying(coercedVersions, range);
@@ -119,7 +122,14 @@ export const isVersion = (input: string): boolean => isValid(input);
 
 export { isVersion as isValid, getSatisfyingVersion };
 
-function getNewValue({ newVersion }: NewValueConfig): string {
+function getNewValue({
+  currentValue,
+  currentVersion,
+  newVersion,
+}: NewValueConfig): string {
+  if (currentVersion === `v${currentValue}`) {
+    return newVersion.replace(/^v/, '');
+  }
   return newVersion;
 }
 

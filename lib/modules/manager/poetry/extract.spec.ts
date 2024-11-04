@@ -51,7 +51,7 @@ describe('modules/manager/poetry/extract', () => {
     it('extracts multiple dependencies', async () => {
       const res = await extractPackageFile(pyproject1toml, filename);
       expect(res?.deps).toMatchSnapshot();
-      expect(res?.deps).toHaveLength(10);
+      expect(res?.deps).toHaveLength(7);
       expect(res?.extractedConstraints).toEqual({
         python: '~2.7 || ^3.4',
       });
@@ -60,7 +60,7 @@ describe('modules/manager/poetry/extract', () => {
     it('extracts multiple dependencies (with dep = {version = "1.2.3"} case)', async () => {
       const res = await extractPackageFile(pyproject2toml, filename);
       expect(res).toMatchSnapshot();
-      expect(res?.deps).toHaveLength(8);
+      expect(res?.deps).toHaveLength(12);
     });
 
     it('handles case with no dependencies', async () => {
@@ -171,7 +171,7 @@ describe('modules/manager/poetry/extract', () => {
       });
     });
 
-    it('parses git dependencies long commit hashs on http urls', async () => {
+    it('parses git dependencies long commit hashes on http urls', async () => {
       const content = codeBlock`
         [tool.poetry.dependencies]
         fastapi = {git = "https://github.com/tiangolo/fastapi.git", rev="6f5aa81c076d22e38afbe7d602db6730e28bc3cc"}
@@ -196,7 +196,7 @@ describe('modules/manager/poetry/extract', () => {
       ]);
     });
 
-    it('parses git dependencies short commit hashs on http urls', async () => {
+    it('parses git dependencies short commit hashes on http urls', async () => {
       const content = codeBlock`
         [tool.poetry.dependencies]
         fastapi = {git = "https://github.com/tiangolo/fastapi.git", rev="6f5aa81"}
@@ -221,7 +221,7 @@ describe('modules/manager/poetry/extract', () => {
       ]);
     });
 
-    it('parses git dependencies long commit hashs on ssh urls', async () => {
+    it('parses git dependencies long commit hashes on ssh urls', async () => {
       const content = codeBlock`
         [tool.poetry.dependencies]
         fastapi = {git = "git@github.com:tiangolo/fastapi.git", rev="6f5aa81c076d22e38afbe7d602db6730e28bc3cc"}
@@ -246,7 +246,7 @@ describe('modules/manager/poetry/extract', () => {
       ]);
     });
 
-    it('parses git dependencies long commit hashs on http urls with branch marker', async () => {
+    it('parses git dependencies long commit hashes on http urls with branch marker', async () => {
       const content = codeBlock`
         [tool.poetry.dependencies]
         fastapi = {git = "https://github.com/tiangolo/fastapi.git", branch="develop", rev="6f5aa81c076d22e38afbe7d602db6730e28bc3cc"}
@@ -302,6 +302,29 @@ describe('modules/manager/poetry/extract', () => {
       expect(res).toHaveLength(2);
     });
 
+    it('parses git dependencies with tags that are not on GitHub', async () => {
+      const content = codeBlock`
+        [tool.poetry.dependencies]
+        aws-sam = {git = "https://gitlab.com/gitlab-examples/aws-sam.git", tag="1.2.3"}
+        platform-tools = {git = "https://some.company.com/platform-tools", tag="1.2.3"}
+      `;
+      const res = await extractPackageFile(content, filename);
+      expect(res?.deps).toMatchObject([
+        {
+          datasource: 'gitlab-tags',
+          depName: 'aws-sam',
+          packageName: 'gitlab-examples/aws-sam',
+          currentValue: '1.2.3',
+        },
+        {
+          datasource: 'git-tags',
+          depName: 'platform-tools',
+          packageName: 'https://some.company.com/platform-tools',
+          currentValue: '1.2.3',
+        },
+      ]);
+    });
+
     it('skips git dependencies', async () => {
       const content = codeBlock`
         [tool.poetry.dependencies]
@@ -325,18 +348,6 @@ describe('modules/manager/poetry/extract', () => {
       expect(res[0].currentValue).toBe('1.2.3');
       expect(res[0].skipReason).toBe('git-dependency');
       expect(res).toHaveLength(2);
-    });
-
-    it('skips git dependencies on tags that are not in github', async () => {
-      const content = codeBlock`
-        [tool.poetry.dependencies]
-        aws-sam = {git = "https://gitlab.com/gitlab-examples/aws-sam.git", tag="1.2.3"}
-      `;
-      const res = (await extractPackageFile(content, filename))!.deps;
-      expect(res[0].depName).toBe('aws-sam');
-      expect(res[0].currentValue).toBe('1.2.3');
-      expect(res[0].skipReason).toBe('git-dependency');
-      expect(res).toHaveLength(1);
     });
 
     it('skips path dependencies', async () => {
@@ -470,11 +481,17 @@ describe('modules/manager/poetry/extract', () => {
             depName: 'typer',
             currentValue: '^0.9.0',
             registryUrls: ['https://pypi.org/pypi/'],
+            managerData: {
+              sourceName: 'pypi',
+            },
           },
           {
             depName: 'requests-cache',
             currentValue: '^1.1.0',
             registryUrls: ['https://example.com'],
+            managerData: {
+              sourceName: 'artifactory',
+            },
           },
         ]);
       });

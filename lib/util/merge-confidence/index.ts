@@ -1,12 +1,13 @@
 import is from '@sindresorhus/is';
 import { supportedDatasources as presetSupportedDatasources } from '../../config/presets/internal/merge-confidence';
-import type { UpdateType } from '../../config/types';
+import type { AllConfig, UpdateType } from '../../config/types';
 import { logger } from '../../logger';
 import { ExternalHostError } from '../../types/errors/external-host-error';
 import * as packageCache from '../cache/package';
-import { parseJson } from '../common';
 import * as hostRules from '../host-rules';
 import { Http } from '../http';
+import { regEx } from '../regex';
+import { ensureTrailingSlash, joinUrlParts } from '../url';
 import { MERGE_CONFIDENCE } from './common';
 import type { MergeConfidence } from './types';
 
@@ -23,44 +24,19 @@ export const confidenceLevels: Record<MergeConfidence, number> = {
   'very high': 2,
 };
 
-export function initConfig(): void {
-  apiBaseUrl = getApiBaseUrl();
+export function initConfig({
+  mergeConfidenceEndpoint,
+  mergeConfidenceDatasources,
+}: AllConfig): void {
+  apiBaseUrl = getApiBaseUrl(mergeConfidenceEndpoint);
   token = getApiToken();
+
   supportedDatasources =
-    parseSupportedDatasourceString() ?? presetSupportedDatasources;
+    mergeConfidenceDatasources ?? presetSupportedDatasources;
 
   if (!is.nullOrUndefined(token)) {
     logger.debug(`Merge confidence token found for ${apiBaseUrl}`);
   }
-}
-
-export function parseSupportedDatasourceString(): string[] | undefined {
-  const supportedDatasourceString =
-    process.env.RENOVATE_X_MERGE_CONFIDENCE_SUPPORTED_DATASOURCES;
-
-  if (!is.string(supportedDatasourceString)) {
-    return undefined;
-  }
-
-  let parsedDatasourceList: unknown;
-  try {
-    parsedDatasourceList = parseJson(supportedDatasourceString, '.json5');
-  } catch (err) {
-    logger.error(
-      { supportedDatasourceString, err },
-      'Failed to parse supported datasources list; Invalid JSON format',
-    );
-  }
-
-  if (!is.array<string>(parsedDatasourceList, is.string)) {
-    logger.warn(
-      { parsedDatasourceList },
-      `Expected a string array but got ${typeof parsedDatasourceList}`,
-    );
-    return undefined;
-  }
-
-  return parsedDatasourceList;
 }
 
 export function resetConfig(): void {
@@ -163,8 +139,15 @@ async function queryApi(
     return 'neutral';
   }
 
-  const escapedPackageName = packageName.replace('/', '%2f');
-  const url = `${apiBaseUrl}api/mc/json/${datasource}/${escapedPackageName}/${currentVersion}/${newVersion}`;
+  const escapedPackageName = packageName.replace(regEx(/\//g), '%2f');
+  const url = joinUrlParts(
+    apiBaseUrl,
+    'api/mc/json',
+    datasource,
+    escapedPackageName,
+    currentVersion,
+    newVersion,
+  );
   const cacheKey = `${token}:${url}`;
   const cachedResult = await packageCache.get(hostType, cacheKey);
 
@@ -209,15 +192,15 @@ async function queryApi(
  * authenticate with the API. If either the base URL or token is not defined, it will immediately return
  * without making a request.
  */
-export async function initMergeConfidence(): Promise<void> {
-  initConfig();
+export async function initMergeConfidence(config: AllConfig): Promise<void> {
+  initConfig(config);
 
   if (is.nullOrUndefined(apiBaseUrl) || is.nullOrUndefined(token)) {
     logger.trace('merge confidence API usage is disabled');
     return;
   }
 
-  const url = `${apiBaseUrl}api/mc/availability`;
+  const url = joinUrlParts(apiBaseUrl, 'api/mc/availability');
   try {
     await http.get(url);
   } catch (err) {
@@ -231,14 +214,9 @@ export async function initMergeConfidence(): Promise<void> {
   return;
 }
 
-function getApiBaseUrl(): string {
+function getApiBaseUrl(mergeConfidenceEndpoint: string | undefined): string {
   const defaultBaseUrl = 'https://developer.mend.io/';
-  const baseFromEnv = process.env.RENOVATE_X_MERGE_CONFIDENCE_API_BASE_URL;
-
-  if (is.nullOrUndefined(baseFromEnv)) {
-    logger.trace('using default merge confidence API base URL');
-    return defaultBaseUrl;
-  }
+  const baseFromEnv = mergeConfidenceEndpoint ?? defaultBaseUrl;
 
   try {
     const parsedBaseUrl = new URL(baseFromEnv).toString();
@@ -246,7 +224,7 @@ function getApiBaseUrl(): string {
       { baseUrl: parsedBaseUrl },
       'using merge confidence API base found in environment variables',
     );
-    return parsedBaseUrl;
+    return ensureTrailingSlash(parsedBaseUrl);
   } catch (err) {
     logger.warn(
       { err, baseFromEnv },

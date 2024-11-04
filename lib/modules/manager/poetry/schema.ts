@@ -1,17 +1,34 @@
-import { ZodEffects, ZodType, ZodTypeDef, z } from 'zod';
+import { z } from 'zod';
 import { logger } from '../../../logger';
 import { parseGitUrl } from '../../../util/git/url';
 import { regEx } from '../../../util/regex';
-import { LooseArray, LooseRecord, Toml } from '../../../util/schema-utils';
+import {
+  LooseArray,
+  LooseRecord,
+  Toml,
+  withDepType,
+} from '../../../util/schema-utils';
 import { uniq } from '../../../util/uniq';
 import { GitRefsDatasource } from '../../datasource/git-refs';
+import { GitTagsDatasource } from '../../datasource/git-tags';
 import { GithubTagsDatasource } from '../../datasource/github-tags';
+import { GitlabTagsDatasource } from '../../datasource/gitlab-tags';
 import { PypiDatasource } from '../../datasource/pypi';
+import { normalizePythonDepName } from '../../datasource/pypi/common';
 import * as gitVersioning from '../../versioning/git';
 import * as pep440Versioning from '../../versioning/pep440';
 import * as poetryVersioning from '../../versioning/poetry';
 import { dependencyPattern } from '../pip_requirements/extract';
 import type { PackageDependency, PackageFileContent } from '../types';
+
+const PoetryOptionalDependencyMixin = z
+  .object({
+    optional: z.boolean().optional().catch(false),
+  })
+  .transform(
+    ({ optional }): PackageDependency =>
+      optional ? { depType: 'extras' } : {},
+  );
 
 const PoetryPathDependency = z
   .object({
@@ -29,7 +46,8 @@ const PoetryPathDependency = z
     }
 
     return dep;
-  });
+  })
+  .and(PoetryOptionalDependencyMixin);
 
 const PoetryGitDependency = z
   .object({
@@ -42,19 +60,24 @@ const PoetryGitDependency = z
   .transform(({ git, tag, version, branch, rev }): PackageDependency => {
     if (tag) {
       const { source, owner, name } = parseGitUrl(git);
+      const repo = `${owner}/${name}`;
       if (source === 'github.com') {
-        const repo = `${owner}/${name}`;
         return {
           datasource: GithubTagsDatasource.id,
           currentValue: tag,
           packageName: repo,
         };
+      } else if (source === 'gitlab.com') {
+        return {
+          datasource: GitlabTagsDatasource.id,
+          currentValue: tag,
+          packageName: repo,
+        };
       } else {
         return {
-          datasource: GitRefsDatasource.id,
+          datasource: GitTagsDatasource.id,
           currentValue: tag,
           packageName: git,
-          skipReason: 'git-dependency',
         };
       }
     }
@@ -67,15 +90,16 @@ const PoetryGitDependency = z
         replaceString: rev,
         packageName: git,
       };
-    } else {
-      return {
-        datasource: GitRefsDatasource.id,
-        currentValue: version,
-        packageName: git,
-        skipReason: 'git-dependency',
-      };
     }
-  });
+
+    return {
+      datasource: GitRefsDatasource.id,
+      currentValue: version,
+      packageName: git,
+      skipReason: 'git-dependency',
+    };
+  })
+  .and(PoetryOptionalDependencyMixin);
 
 const PoetryPypiDependency = z.union([
   z
@@ -87,10 +111,14 @@ const PoetryPypiDependency = z.union([
 
       return {
         datasource: PypiDatasource.id,
-        managerData: { nestedVersion: true, sourceName: source?.toLowerCase() },
+        managerData: {
+          nestedVersion: true,
+          ...(source ? { sourceName: source.toLowerCase() } : {}),
+        },
         currentValue,
       };
-    }),
+    })
+    .and(PoetryOptionalDependencyMixin),
   z.string().transform(
     (version): PackageDependency => ({
       datasource: PypiDatasource.id,
@@ -150,10 +178,7 @@ export const PoetryDependencies = LooseRecord(
   for (const [depName, dep] of Object.entries(record)) {
     dep.depName = depName;
     if (!dep.packageName) {
-      const pep503NormalizeRegex = regEx(/[-_.]+/g);
-      const packageName = depName
-        .toLowerCase()
-        .replace(pep503NormalizeRegex, '-');
+      const packageName = normalizePythonDepName(depName);
       if (depName !== packageName) {
         dep.packageName = packageName;
       }
@@ -162,18 +187,6 @@ export const PoetryDependencies = LooseRecord(
   }
   return deps;
 });
-
-function withDepType<
-  Output extends PackageDependency[],
-  Schema extends ZodType<Output, ZodTypeDef, unknown>,
->(schema: Schema, depType: string): ZodEffects<Schema> {
-  return schema.transform((deps) => {
-    for (const dep of deps) {
-      dep.depType = depType;
-    }
-    return deps;
-  });
-}
 
 export const PoetryGroupDependencies = LooseRecord(
   z.string(),
@@ -258,12 +271,15 @@ export const PoetrySources = LooseArray(PoetrySource, {
 export const PoetrySectionSchema = z
   .object({
     version: z.string().optional().catch(undefined),
-    dependencies: withDepType(PoetryDependencies, 'dependencies').optional(),
+    dependencies: withDepType(
+      PoetryDependencies,
+      'dependencies',
+      false,
+    ).optional(),
     'dev-dependencies': withDepType(
       PoetryDependencies,
       'dev-dependencies',
     ).optional(),
-    extras: withDepType(PoetryDependencies, 'extras').optional(),
     group: PoetryGroupDependencies.optional(),
     source: PoetrySources,
   })
@@ -272,14 +288,12 @@ export const PoetrySectionSchema = z
       version,
       dependencies = [],
       'dev-dependencies': devDependencies = [],
-      extras: extraDependencies = [],
       group: groupDependencies = [],
       source: sourceUrls,
     }) => {
       const deps: PackageDependency[] = [
         ...dependencies,
         ...devDependencies,
-        ...extraDependencies,
         ...groupDependencies,
       ];
 
@@ -364,7 +378,7 @@ export const PoetrySchemaToml = Toml.pipe(PoetrySchema);
 const poetryConstraint: Record<string, string> = {
   '1.0': '<1.1.0',
   '1.1': '<1.3.0',
-  '2.0': '>=1.3.0',
+  '2.0': '>=1.3.0 <1.4.0', // 1.4.0 introduced embedding of the poetry version in lock file header
 };
 
 export const Lockfile = Toml.pipe(

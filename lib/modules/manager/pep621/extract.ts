@@ -13,11 +13,11 @@ import {
   parsePyProject,
 } from './utils';
 
-export function extractPackageFile(
+export async function extractPackageFile(
   content: string,
   packageFile: string,
   _config?: ExtractConfig,
-): PackageFileContent | null {
+): Promise<PackageFileContent | null> {
   logger.trace(`pep621.extractPackageFile(${packageFile})`);
 
   const deps: PackageDependency[] = [];
@@ -39,6 +39,12 @@ export function extractPackageFile(
   );
   deps.push(
     ...parseDependencyGroupRecord(
+      depTypes.dependencyGroups,
+      def['dependency-groups'],
+    ),
+  );
+  deps.push(
+    ...parseDependencyGroupRecord(
       depTypes.optionalDependencies,
       def.project?.['optional-dependencies'],
     ),
@@ -54,6 +60,11 @@ export function extractPackageFile(
   let processedDeps = deps;
   for (const processor of processors) {
     processedDeps = processor.process(def, processedDeps);
+    processedDeps = await processor.extractLockedVersions(
+      def,
+      processedDeps,
+      packageFile,
+    );
   }
 
   return processedDeps.length

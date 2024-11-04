@@ -1,5 +1,6 @@
 import * as semver from 'semver';
-import { SemVer, parseRange } from 'semver-utils';
+import type { SemVer } from 'semver-utils';
+import { parseRange } from 'semver-utils';
 import { logger } from '../../../logger';
 import { coerceString } from '../../../util/string';
 import type { NewValueConfig } from '../types';
@@ -44,7 +45,9 @@ export function getPatch(version: string): null | number {
 
   if (typeof cleanerVersion === 'string') {
     const newVersion = semver.valid(
-      semver.coerce(cleanedVersion, options),
+      semver.coerce(cleanedVersion, {
+        loose: false,
+      }),
       options,
     );
     return Number(newVersion?.split('.')[2]);

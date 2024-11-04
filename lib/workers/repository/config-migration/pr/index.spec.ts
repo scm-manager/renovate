@@ -2,12 +2,8 @@ import type { Indent } from 'detect-indent';
 import type { RequestError, Response } from 'got';
 import { mock } from 'jest-mock-extended';
 import { Fixtures } from '../../../../../test/fixtures';
-import {
-  RenovateConfig,
-  partial,
-  platform,
-  scm,
-} from '../../../../../test/util';
+import type { RenovateConfig } from '../../../../../test/util';
+import { partial, platform, scm } from '../../../../../test/util';
 import { getConfig } from '../../../../config/defaults';
 import { GlobalConfig } from '../../../../config/global';
 import { logger } from '../../../../logger';
@@ -144,8 +140,8 @@ describe('workers/repository/config-migration/pr/index', () => {
       );
       expect(platform.createPr).toHaveBeenCalledTimes(1);
       expect(platform.createPr.mock.calls[0][0].labels).toEqual([
-        'label',
         'additional-label',
+        'label',
       ]);
     });
 

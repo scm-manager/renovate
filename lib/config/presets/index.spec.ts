@@ -229,15 +229,6 @@ describe('config/presets/index', () => {
       expect(e!.validationMessage).toBeUndefined();
     });
 
-    it('combines two package alls', async () => {
-      config.extends = ['packages:eslint', 'packages:stylelint'];
-      const res = await presets.resolveConfigPresets(config);
-      expect(res).toEqual({
-        matchPackageNames: ['@types/eslint', 'babel-eslint'],
-        matchPackagePrefixes: ['@typescript-eslint/', 'eslint', 'stylelint'],
-      });
-    });
-
     it('resolves packageRule', async () => {
       config.packageRules = [
         {
@@ -250,8 +241,18 @@ describe('config/presets/index', () => {
         packageRules: [
           {
             groupName: 'eslint',
-            matchPackageNames: ['@types/eslint', 'babel-eslint'],
-            matchPackagePrefixes: ['@typescript-eslint/', 'eslint'],
+            matchPackageNames: [
+              '@types/eslint',
+              'babel-eslint',
+              '@babel/eslint-parser',
+              '@eslint/**',
+              '@eslint-community/**',
+              '@stylistic/eslint-plugin**',
+              '@types/eslint__**',
+              '@typescript-eslint/**',
+              'typescript-eslint',
+              'eslint**',
+            ],
           },
         ],
       });
@@ -261,16 +262,14 @@ describe('config/presets/index', () => {
       config.extends = ['packages:eslint'];
       const res = await presets.resolveConfigPresets(config);
       expect(res).toMatchSnapshot();
-      expect(res.matchPackagePrefixes).toHaveLength(2);
+      expect(res.matchPackageNames).toHaveLength(10);
     });
 
     it('resolves linters', async () => {
       config.extends = ['packages:linters'];
       const res = await presets.resolveConfigPresets(config);
       expect(res).toMatchSnapshot();
-      expect(res.matchPackageNames).toHaveLength(9);
-      expect(res.matchPackagePatterns).toHaveLength(1);
-      expect(res.matchPackagePrefixes).toHaveLength(4);
+      expect(res.matchPackageNames).toHaveLength(20);
     });
 
     it('resolves nested groups', async () => {
@@ -279,9 +278,7 @@ describe('config/presets/index', () => {
       expect(res).toMatchSnapshot();
       const rule = res.packageRules![0];
       expect(rule.automerge).toBeTrue();
-      expect(rule.matchPackageNames).toHaveLength(9);
-      expect(rule.matchPackagePatterns).toHaveLength(1);
-      expect(rule.matchPackagePrefixes).toHaveLength(4);
+      expect(rule.matchPackageNames).toHaveLength(20);
     });
 
     it('migrates automerge in presets', async () => {
@@ -312,6 +309,21 @@ describe('config/presets/index', () => {
       expect(res.labels).toEqual(['self-hosted resolved']);
       expect(local.getPreset.mock.calls).toHaveLength(1);
       expect(res).toMatchSnapshot();
+    });
+
+    it('resolves self-hosted preset with templating', async () => {
+      GlobalConfig.set({ customEnvVariables: { GIT_REF: 'abc123' } });
+      config.extends = ['local>username/preset-repo#{{ env.GIT_REF }}'];
+      local.getPreset.mockImplementationOnce(({ tag }) =>
+        tag === 'abc123'
+          ? Promise.resolve({ labels: ['self-hosted with template resolved'] })
+          : Promise.reject(new Error('Failed to resolve self-hosted preset')),
+      );
+
+      const res = await presets.resolveConfigPresets(config);
+
+      expect(res.labels).toEqual(['self-hosted with template resolved']);
+      expect(local.getPreset).toHaveBeenCalledOnce();
     });
 
     it('resolves self-hosted transitive presets without baseConfig', async () => {
@@ -936,6 +948,48 @@ describe('config/presets/index', () => {
         presetSource: 'npm',
       });
     });
+
+    it('parses HTTPS URLs', () => {
+      expect(
+        presets.parsePreset(
+          'https://my.server/gitea/renovate-config/raw/branch/main/default.json',
+        ),
+      ).toEqual({
+        repo: 'https://my.server/gitea/renovate-config/raw/branch/main/default.json',
+        params: undefined,
+        presetName: '',
+        presetPath: undefined,
+        presetSource: 'http',
+      });
+    });
+
+    it('parses HTTP URLs', () => {
+      expect(
+        presets.parsePreset(
+          'http://my.server/users/me/repos/renovate-presets/raw/default.json?at=refs%2Fheads%2Fmain',
+        ),
+      ).toEqual({
+        repo: 'http://my.server/users/me/repos/renovate-presets/raw/default.json?at=refs%2Fheads%2Fmain',
+        params: undefined,
+        presetName: '',
+        presetPath: undefined,
+        presetSource: 'http',
+      });
+    });
+
+    it('parses HTTPS URLs with parameters', () => {
+      expect(
+        presets.parsePreset(
+          'https://my.server/gitea/renovate-config/raw/branch/main/default.json(param1)',
+        ),
+      ).toEqual({
+        repo: 'https://my.server/gitea/renovate-config/raw/branch/main/default.json',
+        params: ['param1'],
+        presetName: '',
+        presetPath: undefined,
+        presetSource: 'http',
+      });
+    });
   });
 
   describe('getPreset', () => {
@@ -996,6 +1050,14 @@ describe('config/presets/index', () => {
           ],
         }
       `);
+    });
+
+    it('handles renamed regexManagers presets', async () => {
+      const res = await presets.getPreset(
+        'regexManagers:dockerfileVersions',
+        {},
+      );
+      expect(res.customManagers).toHaveLength(1);
     });
 
     it('gets linters', async () => {

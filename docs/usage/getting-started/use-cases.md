@@ -51,7 +51,7 @@ A simplified example:
 
 ### Custom dependency extraction
 
-Renovate supports 60+ types of package files.
+Renovate supports 90+ types of package files.
 By default, Renovate finds most dependencies, but there are exceptions.
 This can be because:
 
@@ -198,8 +198,6 @@ Here's how it works:
 - Renovate only raises updates for packages that need "Dashboard Approval" after you select the corresponding checkbox on the dashboard
 
 #### Benefits of using Dependency Dashboard Approval
-
-Benefits of using Dependency Dashboard Approval:
 
 - By not raising PRs automatically, it allows you to request updates on-demand when you're ready, and
 - It offers you an alternative to permanently ignoring/disabling certain types of updates, like major updates

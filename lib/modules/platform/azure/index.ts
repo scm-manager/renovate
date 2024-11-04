@@ -1,12 +1,14 @@
 import { setTimeout } from 'timers/promises';
 import is from '@sindresorhus/is';
-import {
+import type {
   GitPullRequest,
   GitPullRequestCommentThread,
-  GitPullRequestMergeStrategy,
   GitStatus,
-  GitStatusState,
   GitVersionDescriptor,
+} from 'azure-devops-node-api/interfaces/GitInterfaces.js';
+import {
+  GitPullRequestMergeStrategy,
+  GitStatusState,
   PullRequestStatus,
 } from 'azure-devops-node-api/interfaces/GitInterfaces.js';
 import {
@@ -22,7 +24,6 @@ import * as git from '../../../util/git';
 import * as hostRules from '../../../util/host-rules';
 import { regEx } from '../../../util/regex';
 import { sanitize } from '../../../util/sanitize';
-import { streamToString } from '../../../util/streams';
 import { ensureTrailingSlash } from '../../../util/url';
 import type {
   BranchStatusConfig,
@@ -44,7 +45,8 @@ import { getNewBranchName, repoFingerprint } from '../util';
 import { smartTruncate } from '../utils/pr-body';
 import * as azureApi from './azure-got-wrapper';
 import * as azureHelper from './azure-helper';
-import { AzurePr, AzurePrVote } from './types';
+import type { AzurePr } from './types';
+import { AzurePrVote } from './types';
 import {
   getBranchNameWithoutRefsheadsPrefix,
   getGitStatusContextCombinedName,
@@ -146,20 +148,20 @@ export async function getRawFile(
       version: branchOrTag,
     } satisfies GitVersionDescriptor;
 
-    const buf = await azureApiGit.getItemContent(
-      repoId,
-      fileName,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      branchOrTag ? versionDescriptor : undefined,
+    const item = await azureApiGit.getItem(
+      repoId, // repositoryId
+      fileName, // path
+      undefined, // project
+      undefined, // scopePath
+      undefined, // recursionLevel
+      undefined, // includeContentMetadata
+      undefined, // latestProcessedChange
+      undefined, // download
+      branchOrTag ? versionDescriptor : undefined, // versionDescriptor
+      true, // includeContent
     );
 
-    const str = await streamToString(buf);
-    return str;
+    return item?.content ?? null;
   } catch (err) /* istanbul ignore next */ {
     if (
       err.message?.includes('<title>Azure DevOps Services Unavailable</title>')
@@ -245,10 +247,6 @@ export async function initRepo({
     repoFingerprint: repoFingerprint(repo.id!, defaults.endpoint),
   };
   return repoConfig;
-}
-
-export function getRepoForceRebase(): Promise<boolean> {
-  return Promise.resolve(config.repoForceRebase === true);
 }
 
 export async function getPrList(): Promise<AzurePr[]> {
@@ -387,6 +385,7 @@ const azureToRenovateStatusMapping: Record<GitStatusState, BranchStatus> = {
   [GitStatusState.NotApplicable]: 'green',
   [GitStatusState.NotSet]: 'yellow',
   [GitStatusState.Pending]: 'yellow',
+  [GitStatusState.PartiallySucceeded]: 'yellow',
   [GitStatusState.Error]: 'red',
   [GitStatusState.Failed]: 'red',
 };
@@ -469,7 +468,7 @@ export async function createPr({
   prBody: body,
   labels,
   draftPR = false,
-  platformOptions,
+  platformPrOptions,
 }: CreatePRConfig): Promise<Pr> {
   const sourceRefName = getNewBranchName(sourceBranch);
   const targetRefName = getNewBranchName(targetBranch);
@@ -477,7 +476,7 @@ export async function createPr({
   const azureApiGit = await azureApi.gitApi();
   const workItemRefs = [
     {
-      id: platformOptions?.azureWorkItemId?.toString(),
+      id: platformPrOptions?.azureWorkItemId?.toString(),
     },
   ];
   let pr: GitPullRequest = await azureApiGit.createPullRequest(
@@ -491,11 +490,11 @@ export async function createPr({
     },
     config.repoId,
   );
-  if (platformOptions?.usePlatformAutomerge) {
+  if (platformPrOptions?.usePlatformAutomerge) {
     const mergeStrategy =
-      platformOptions.automergeStrategy === 'auto'
+      platformPrOptions.automergeStrategy === 'auto'
         ? await getMergeStrategy(pr.targetRefName!)
-        : mapMergeStrategy(platformOptions.automergeStrategy);
+        : mapMergeStrategy(platformPrOptions.automergeStrategy);
     pr = await azureApiGit.updatePullRequest(
       {
         autoCompleteSetBy: {
@@ -513,7 +512,7 @@ export async function createPr({
       pr.pullRequestId!,
     );
   }
-  if (platformOptions?.autoApprove) {
+  if (platformPrOptions?.autoApprove) {
     await azureApiGit.createPullRequestReviewer(
       {
         reviewerUrl: pr.createdBy!.url,
@@ -539,7 +538,12 @@ export async function createPr({
       ),
     ),
   );
-  return getRenovatePRFormat(pr);
+
+  const result = getRenovatePRFormat(pr);
+  if (config.prList) {
+    config.prList.push(result);
+  }
+  return result;
 }
 
 export async function updatePr({
@@ -547,7 +551,7 @@ export async function updatePr({
   prTitle: title,
   prBody: body,
   state,
-  platformOptions,
+  platformPrOptions,
   targetBranch,
 }: UpdatePrConfig): Promise<void> {
   logger.debug(`updatePr(${prNo}, ${title}, body)`);
@@ -576,7 +580,7 @@ export async function updatePr({
   } else if (state === 'closed') {
     objToUpdate.status = PullRequestStatus.Abandoned;
   }
-  if (platformOptions?.autoApprove) {
+  if (platformPrOptions?.autoApprove) {
     const pr = await azureApiGit.getPullRequestById(prNo, config.project);
     await azureApiGit.createPullRequestReviewer(
       {
@@ -592,7 +596,27 @@ export async function updatePr({
     );
   }
 
-  await azureApiGit.updatePullRequest(objToUpdate, config.repoId, prNo);
+  const updatedPr = await azureApiGit.updatePullRequest(
+    objToUpdate,
+    config.repoId,
+    prNo,
+  );
+  if (config.prList) {
+    const prToCache = getRenovatePRFormat(updatedPr);
+    // We need to update the cached entry for this PR
+    const existingIndex = config.prList.findIndex(
+      (item) => item.number === prNo,
+    );
+    // istanbul ignore if: should not happen
+    if (existingIndex === -1) {
+      logger.warn({ prNo }, 'PR not found in cache');
+      // Add to cache
+      config.prList.push(prToCache);
+    } else {
+      // overwrite existing PR in cache
+      config.prList[existingIndex] = prToCache;
+    }
+  }
 }
 
 export async function ensureComment({
@@ -812,10 +836,10 @@ export async function mergePr({
 
 export function massageMarkdown(input: string): string {
   // Remove any HTML we use
-  return smartTruncate(input, 4000)
+  return smartTruncate(input, maxBodyLength())
     .replace(
       'you tick the rebase/retry checkbox',
-      'rename PR to start with "rebase!"',
+      'PR is renamed to start with "rebase!"',
     )
     .replace(
       'checking the rebase/retry box above',
@@ -825,15 +849,21 @@ export function massageMarkdown(input: string): string {
     .replace(regEx(/<!--renovate-(?:debug|config-hash):.*?-->/g), '');
 }
 
+export function maxBodyLength(): number {
+  return 4000;
+}
+
 /* istanbul ignore next */
 export function findIssue(): Promise<Issue | null> {
-  logger.warn(`findIssue() is not implemented`);
+  // TODO: Needs implementation (#9592)
+  logger.debug(`findIssue() is not implemented`);
   return Promise.resolve(null);
 }
 
 /* istanbul ignore next */
 export function ensureIssue(): Promise<EnsureIssueResult | null> {
-  logger.warn(`ensureIssue() is not implemented`);
+  // TODO: Needs implementation (#9592)
+  logger.debug(`ensureIssue() is not implemented`);
   return Promise.resolve(null);
 }
 
@@ -855,9 +885,10 @@ async function getUserIds(users: string[]): Promise<User[]> {
   const repos = await azureApiGit.getRepositories();
   const repo = repos.filter((c) => c.id === config.repoId)[0];
   const requiredReviewerPrefix = 'required:';
+  const validReviewers = new Set<string>();
 
   // TODO #22198
-  const teams = await azureApiCore.getTeams(repo.project!.id!);
+  const teams = await azureHelper.getAllProjectTeams(repo.project!.id!);
   const members = await Promise.all(
     teams.map(
       async (t) =>
@@ -890,6 +921,8 @@ async function getUserIds(users: string[]): Promise<User[]> {
               name: reviewer,
               isRequired,
             });
+
+            validReviewers.add(reviewer);
           }
         }
       });
@@ -908,10 +941,21 @@ async function getUserIds(users: string[]): Promise<User[]> {
         if (ids.filter((c) => c.id === t.id).length === 0) {
           // TODO #22198
           ids.push({ id: t.id!, name: reviewer, isRequired });
+
+          validReviewers.add(reviewer);
         }
       }
     });
   });
+
+  for (const u of users) {
+    const reviewer = u.replace(requiredReviewerPrefix, '');
+    if (!validReviewers.has(reviewer)) {
+      logger.once.info(
+        `${reviewer} is neither an Azure DevOps Team nor a user associated with a Team`,
+      );
+    }
+  }
 
   return ids;
 }

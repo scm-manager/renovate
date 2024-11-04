@@ -1,4 +1,5 @@
 import { setTimeout } from 'timers/promises';
+import semver from 'semver';
 import type { PartialDeep } from 'type-fest';
 import {
   REPOSITORY_CHANGED,
@@ -16,7 +17,7 @@ import {
   BitbucketServerHttp,
   setBaseUrl,
 } from '../../../util/http/bitbucket-server';
-import type { HttpResponse } from '../../../util/http/types';
+import type { HttpOptions, HttpResponse } from '../../../util/http/types';
 import { newlineRegex, regEx } from '../../../util/regex';
 import { sanitize } from '../../../util/sanitize';
 import { ensureTrailingSlash, getQueryString } from '../../../util/url';
@@ -39,6 +40,7 @@ import type {
 } from '../types';
 import { getNewBranchName, repoFingerprint } from '../util';
 import { smartTruncate } from '../utils/pr-body';
+import { UserSchema } from './schema';
 import type {
   BbsConfig,
   BbsPr,
@@ -48,6 +50,7 @@ import type {
   BbsRestUserRef,
 } from './types';
 import * as utils from './utils';
+import { getExtraCloneOpts } from './utils';
 
 /*
  * Version: 5.3 (EOL Date: 15 Aug 2019)
@@ -68,8 +71,10 @@ const bitbucketServerHttp = new BitbucketServerHttp();
 const defaults: {
   endpoint?: string;
   hostType: string;
+  version: string;
 } = {
   hostType: 'bitbucket-server',
+  version: '0.0.0',
 };
 
 /* istanbul ignore next */
@@ -79,17 +84,23 @@ function updatePrVersion(pr: number, version: number): number {
   return res;
 }
 
-export function initPlatform({
+export async function initPlatform({
   endpoint,
+  token,
   username,
   password,
+  gitAuthor,
 }: PlatformParams): Promise<PlatformResult> {
   if (!endpoint) {
     throw new Error('Init: You must configure a Bitbucket Server endpoint');
   }
-  if (!(username && password)) {
+  if (!(username && password) && !token) {
     throw new Error(
-      'Init: You must configure a Bitbucket Server username/password',
+      'Init: You must either configure a Bitbucket Server username/password or a HTTP access token',
+    );
+  } else if (password && token) {
+    throw new Error(
+      'Init: You must configure either a Bitbucket Server password or a HTTP access token, not both',
     );
   }
   // TODO: Add a connection check that endpoint/username/password combination are valid (#9595)
@@ -98,7 +109,65 @@ export function initPlatform({
   const platformConfig: PlatformResult = {
     endpoint: defaults.endpoint,
   };
-  return Promise.resolve(platformConfig);
+  try {
+    let bitbucketServerVersion: string;
+    // istanbul ignore if: experimental feature
+    if (process.env.RENOVATE_X_PLATFORM_VERSION) {
+      bitbucketServerVersion = process.env.RENOVATE_X_PLATFORM_VERSION;
+    } else {
+      const { version } = (
+        await bitbucketServerHttp.getJson<{ version: string }>(
+          `./rest/api/1.0/application-properties`,
+        )
+      ).body;
+      bitbucketServerVersion = version;
+      logger.debug('Bitbucket Server version is: ' + bitbucketServerVersion);
+    }
+
+    if (semver.valid(bitbucketServerVersion)) {
+      defaults.version = bitbucketServerVersion;
+    }
+  } catch (err) {
+    logger.debug(
+      { err },
+      'Error authenticating with Bitbucket. Check that your token includes "api" permissions',
+    );
+  }
+
+  if (!gitAuthor && username) {
+    logger.debug(`Attempting to confirm gitAuthor from username`);
+    const options: HttpOptions = {
+      memCache: false,
+    };
+
+    if (token) {
+      options.token = token;
+    } else {
+      options.username = username;
+      options.password = password;
+    }
+
+    try {
+      const { displayName, emailAddress } = (
+        await bitbucketServerHttp.getJson(
+          `./rest/api/1.0/users/${username}`,
+          options,
+          UserSchema,
+        )
+      ).body;
+
+      platformConfig.gitAuthor = `${displayName} <${emailAddress}>`;
+
+      logger.debug(`Detected gitAuthor: ${platformConfig.gitAuthor}`);
+    } catch (err) {
+      logger.debug(
+        { err },
+        'Failed to get user info, fallback gitAuthor will be used',
+      );
+    }
+  }
+
+  return platformConfig;
 }
 
 // Get all repositories that the user has access to
@@ -203,8 +272,9 @@ export async function initRepo({
     await git.initRepo({
       ...config,
       url,
+      extraCloneOpts: getExtraCloneOpts(opts),
       cloneSubmodules,
-      fullClone: true,
+      fullClone: semver.lte(defaults.version, '8.0.0'),
     });
 
     config.mergeMethod = 'merge';
@@ -228,9 +298,9 @@ export async function initRepo({
   }
 }
 
-export async function getRepoForceRebase(): Promise<boolean> {
-  logger.debug(`getRepoForceRebase()`);
-
+export async function getBranchForceRebase(
+  _branchName: string,
+): Promise<boolean> {
   // https://docs.atlassian.com/bitbucket-server/rest/7.0.1/bitbucket-rest.html#idp342
   const res = await bitbucketServerHttp.getJson<{
     mergeConfig: { defaultStrategy: { id: string } };
@@ -300,7 +370,7 @@ export async function getPrList(refreshCache?: boolean): Promise<Pr[]> {
     const searchParams: Record<string, string> = {
       state: 'ALL',
     };
-    if (!config.ignorePrAuthor) {
+    if (!config.ignorePrAuthor && config.username !== undefined) {
       searchParams['role.1'] = 'AUTHOR';
       searchParams['username.1'] = config.username;
     }
@@ -584,6 +654,15 @@ export async function addReviewers(
 ): Promise<void> {
   logger.debug(`Adding reviewers '${reviewers.join(', ')}' to #${prNo}`);
 
+  await retry(updatePRAndAddReviewers, [prNo, reviewers], 3, [
+    REPOSITORY_CHANGED,
+  ]);
+}
+
+async function updatePRAndAddReviewers(
+  prNo: number,
+  reviewers: string[],
+): Promise<void> {
   try {
     const pr = await getPr(prNo);
     if (!pr) {
@@ -622,6 +701,35 @@ export async function addReviewers(
       throw err;
     }
   }
+}
+
+async function retry<T extends (...arg0: any[]) => Promise<any>>(
+  fn: T,
+  args: Parameters<T>,
+  maxTries: number,
+  retryErrorMessages: string[],
+): Promise<Awaited<ReturnType<T>>> {
+  const maxAttempts = Math.max(maxTries, 1);
+  let lastError: Error | undefined;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await fn(...args);
+    } catch (e) {
+      lastError = e;
+      if (
+        retryErrorMessages.length !== 0 &&
+        !retryErrorMessages.includes(e.message)
+      ) {
+        logger.debug(`Error not marked for retry`);
+        throw e;
+      }
+    }
+  }
+
+  logger.debug(`All ${maxAttempts} retry attempts exhausted`);
+  // Can't be `undefined` here.
+  // eslint-disable-next-line @typescript-eslint/only-throw-error
+  throw lastError;
 }
 
 export function deleteLabel(issueNo: number, label: string): Promise<void> {
@@ -794,15 +902,14 @@ export async function createPr({
   targetBranch,
   prTitle: title,
   prBody: rawDescription,
-  platformOptions,
+  platformPrOptions,
 }: CreatePRConfig): Promise<Pr> {
   const description = sanitize(rawDescription);
   logger.debug(`createPr(${sourceBranch}, title=${title})`);
   const base = targetBranch;
   let reviewers: BbsRestUserRef[] = [];
 
-  /* istanbul ignore else */
-  if (platformOptions?.bbUseDefaultReviewers) {
+  if (platformPrOptions?.bbUseDefaultReviewers) {
     logger.debug(`fetching default reviewers`);
     const { id } = (
       await bitbucketServerHttp.getJson<{ id: number }>(
@@ -997,10 +1104,10 @@ export async function mergePr({
 export function massageMarkdown(input: string): string {
   logger.debug(`massageMarkdown(${input.split(newlineRegex)[0]})`);
   // Remove any HTML we use
-  return smartTruncate(input, 30000)
+  return smartTruncate(input, maxBodyLength())
     .replace(
       'you tick the rebase/retry checkbox',
-      'rename PR to start with "rebase!"',
+      'PR is renamed to start with "rebase!"',
     )
     .replace(
       'checking the rebase/retry box above',
@@ -1009,5 +1116,9 @@ export function massageMarkdown(input: string): string {
     .replace(regEx(/<\/?summary>/g), '**')
     .replace(regEx(/<\/?details>/g), '')
     .replace(regEx(`\n---\n\n.*?<!-- rebase-check -->.*?(\n|$)`), '')
-    .replace(regEx('<!--.*?-->', 'g'), '');
+    .replace(regEx(/<!--.*?-->/gs), '');
+}
+
+export function maxBodyLength(): number {
+  return 30000;
 }

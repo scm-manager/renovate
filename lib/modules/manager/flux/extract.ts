@@ -1,5 +1,6 @@
 import is from '@sindresorhus/is';
 import { logger } from '../../../logger';
+import { coerceArray } from '../../../util/array';
 import { readLocalFile } from '../../../util/fs';
 import { regEx } from '../../../util/regex';
 import { parseYaml } from '../../../util/yaml';
@@ -12,6 +13,8 @@ import { GithubTagsDatasource } from '../../datasource/github-tags';
 import { GitlabTagsDatasource } from '../../datasource/gitlab-tags';
 import { HelmDatasource } from '../../datasource/helm';
 import { getDep } from '../dockerfile/extract';
+import { isOCIRegistry, removeOCIPrefix } from '../helmv3/oci';
+import { extractImage } from '../kustomize/extract';
 import type {
   ExtractConfig,
   PackageDependency,
@@ -19,11 +22,10 @@ import type {
   PackageFileContent,
 } from '../types';
 import { isSystemManifest, systemManifestHeaderRegex } from './common';
+import { FluxResource, type HelmRepository } from './schema';
 import type {
   FluxManagerData,
   FluxManifest,
-  FluxResource,
-  HelmRepository,
   ResourceFluxManifest,
   SystemFluxManifest,
 } from './types';
@@ -45,61 +47,14 @@ function readManifest(
     };
   }
 
-  const manifest: FluxManifest = {
+  return {
     kind: 'resource',
     file: packageFile,
-    resources: [],
+    resources: parseYaml(content, {
+      customSchema: FluxResource,
+      failureBehaviour: 'filter',
+    }),
   };
-  let resources: FluxResource[];
-  try {
-    // TODO: use schema (#9610)
-    resources = parseYaml(content, null, { json: true });
-  } catch (err) {
-    logger.debug({ err, packageFile }, 'Failed to parse Flux manifest');
-    return null;
-  }
-
-  // It's possible there are other non-Flux HelmRelease/HelmRepository CRs out there, so we filter based on apiVersion.
-  for (const resource of resources) {
-    switch (resource?.kind) {
-      case 'HelmRelease':
-        if (
-          resource.apiVersion?.startsWith('helm.toolkit.fluxcd.io/') &&
-          resource.spec?.chart?.spec?.chart
-        ) {
-          manifest.resources.push(resource);
-        }
-        break;
-      case 'HelmRepository':
-        if (
-          resource.apiVersion?.startsWith('source.toolkit.fluxcd.io/') &&
-          resource.metadata?.name &&
-          resource.metadata.namespace &&
-          resource.spec?.url
-        ) {
-          manifest.resources.push(resource);
-        }
-        break;
-      case 'GitRepository':
-        if (
-          resource.apiVersion?.startsWith('source.toolkit.fluxcd.io/') &&
-          resource.spec?.url
-        ) {
-          manifest.resources.push(resource);
-        }
-        break;
-      case 'OCIRepository':
-        if (
-          resource.apiVersion?.startsWith('source.toolkit.fluxcd.io/') &&
-          resource.spec?.url
-        ) {
-          manifest.resources.push(resource);
-        }
-        break;
-    }
-  }
-
-  return manifest;
 }
 
 const githubUrlRegex = regEx(
@@ -165,6 +120,7 @@ function resolveSystemManifest(
 function resolveResourceManifest(
   manifest: ResourceFluxManifest,
   helmRepositories: HelmRepository[],
+  registryAliases: Record<string, string> | undefined,
 ): PackageDependency[] {
   const deps: PackageDependency[] = [];
   for (const resource of manifest.resources) {
@@ -187,16 +143,17 @@ function resolveResourceManifest(
         if (matchingRepositories.length) {
           dep.registryUrls = matchingRepositories
             .map((repo) => {
-              if (
-                repo.spec.type === 'oci' ||
-                repo.spec.url.startsWith('oci://')
-              ) {
+              if (repo.spec.type === 'oci' || isOCIRegistry(repo.spec.url)) {
                 // Change datasource to Docker
                 dep.datasource = DockerDatasource.id;
                 // Ensure the URL is a valid OCI path
-                dep.packageName = `${repo.spec.url.replace('oci://', '')}/${
-                  resource.spec.chart.spec.chart
-                }`;
+                dep.packageName = getDep(
+                  `${removeOCIPrefix(repo.spec.url)}/${
+                    resource.spec.chart.spec.chart
+                  }`,
+                  false,
+                  registryAliases,
+                ).depName;
                 return null;
               } else {
                 return repo.spec.url;
@@ -238,17 +195,23 @@ function resolveResourceManifest(
         break;
       }
       case 'OCIRepository': {
-        const container = resource.spec.url?.replace('oci://', '');
-        let dep: PackageDependency = {
-          depName: container,
-        };
+        const container = removeOCIPrefix(resource.spec.url);
+        let dep = getDep(container, false, registryAliases);
         if (resource.spec.ref?.digest) {
-          dep = getDep(`${container}@${resource.spec.ref.digest}`, false);
+          dep = getDep(
+            `${container}@${resource.spec.ref.digest}`,
+            false,
+            registryAliases,
+          );
           if (resource.spec.ref?.tag) {
             logger.debug('A digest and tag was found, ignoring tag');
           }
         } else if (resource.spec.ref?.tag) {
-          dep = getDep(`${container}:${resource.spec.ref.tag}`, false);
+          dep = getDep(
+            `${container}:${resource.spec.ref.tag}`,
+            false,
+            registryAliases,
+          );
           dep.autoReplaceStringTemplate =
             '{{#if newValue}}{{newValue}}{{/if}}{{#if newDigest}}@{{newDigest}}{{/if}}';
           dep.replaceString = resource.spec.ref.tag;
@@ -258,6 +221,15 @@ function resolveResourceManifest(
         deps.push(dep);
         break;
       }
+
+      case 'Kustomization': {
+        for (const image of coerceArray(resource.spec.images)) {
+          const dep = extractImage(image, registryAliases);
+          if (dep) {
+            deps.push(dep);
+          }
+        }
+      }
     }
   }
   return deps;
@@ -266,6 +238,7 @@ function resolveResourceManifest(
 export function extractPackageFile(
   content: string,
   packageFile: string,
+  config?: ExtractConfig,
 ): PackageFileContent<FluxManagerData> | null {
   const manifest = readManifest(content, packageFile);
   if (!manifest) {
@@ -285,7 +258,11 @@ export function extractPackageFile(
       deps = resolveSystemManifest(manifest);
       break;
     case 'resource': {
-      deps = resolveResourceManifest(manifest, helmRepositories);
+      deps = resolveResourceManifest(
+        manifest,
+        helmRepositories,
+        config?.registryAliases,
+      );
       break;
     }
   }
@@ -293,7 +270,7 @@ export function extractPackageFile(
 }
 
 export async function extractAllPackageFiles(
-  _config: ExtractConfig,
+  config: ExtractConfig,
   packageFiles: string[],
 ): Promise<PackageFile<FluxManagerData>[] | null> {
   const manifests: FluxManifest[] = [];
@@ -326,7 +303,11 @@ export async function extractAllPackageFiles(
         deps = resolveSystemManifest(manifest);
         break;
       case 'resource': {
-        deps = resolveResourceManifest(manifest, helmRepositories);
+        deps = resolveResourceManifest(
+          manifest,
+          helmRepositories,
+          config.registryAliases,
+        );
         break;
       }
     }

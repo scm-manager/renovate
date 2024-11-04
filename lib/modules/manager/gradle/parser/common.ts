@@ -1,4 +1,5 @@
-import { lexer, parser, query as q } from 'good-enough-parser';
+import type { lexer, parser } from 'good-enough-parser';
+import { query as q } from 'good-enough-parser';
 import { clone } from '../../../../util/clone';
 import { regEx } from '../../../../util/regex';
 import type {
@@ -104,7 +105,7 @@ export function stripReservedPrefixFromKeyTokens(ctx: Ctx): Ctx {
 
 export function coalesceVariable(ctx: Ctx): Ctx {
   if (ctx.varTokens.length > 1) {
-    ctx.varTokens[0]!.value = ctx.varTokens
+    ctx.varTokens[0].value = ctx.varTokens
       .map((token) => token.value)
       .join('.');
     ctx.varTokens.length = 1;
@@ -231,7 +232,7 @@ export const qVariableAccessIdentifier = q
   .handler(coalesceVariable)
   .handler((ctx) => {
     ctx.varTokens = [
-      ...ctx.tmpTokenStore.backupVarAccessTokens!,
+      ...ctx.tmpTokenStore.backupVarAccessTokens,
       ...ctx.varTokens,
     ];
     delete ctx.tmpTokenStore.backupVarAccessTokens;

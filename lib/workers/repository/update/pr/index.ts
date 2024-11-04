@@ -8,13 +8,13 @@ import {
 } from '../../../../constants/error-messages';
 import { pkg } from '../../../../expose.cjs';
 import { logger } from '../../../../logger';
-import {
+import type {
   PlatformPrOptions,
   Pr,
   PrDebugData,
   UpdatePrConfig,
-  platform,
 } from '../../../../modules/platform';
+import { platform } from '../../../../modules/platform';
 import { ensureComment } from '../../../../modules/platform/comment';
 import {
   getPrBodyStruct,
@@ -36,7 +36,7 @@ import type {
 import { embedChangelogs } from '../../changelog';
 import { resolveBranchStatus } from '../branch/status-checks';
 import { getPrBody } from './body';
-import { prepareLabels } from './labels';
+import { getChangedLabels, prepareLabels, shouldUpdateLabels } from './labels';
 import { addParticipants } from './participants';
 import { getPrCache, setPrCache } from './pr-cache';
 import {
@@ -57,6 +57,7 @@ export function getPlatformPrOptions(
     autoApprove: !!config.autoApprove,
     automergeStrategy: config.automergeStrategy,
     azureWorkItemId: config.azureWorkItemId ?? 0,
+    bbAutoResolvePrTasks: !!config.bbAutoResolvePrTasks,
     bbUseDefaultReviewers: !!config.bbUseDefaultReviewers,
     gitLabIgnoreApprovals: !!config.gitLabIgnoreApprovals,
     forkModeDisallowMaintainerEdits: !!config.forkModeDisallowMaintainerEdits,
@@ -78,15 +79,27 @@ export type EnsurePrResult = ResultWithPr | ResultWithoutPr;
 
 export function updatePrDebugData(
   targetBranch: string,
+  labels: string[],
   debugData: PrDebugData | undefined,
 ): PrDebugData {
   const createdByRenovateVersion = debugData?.createdInVer ?? pkg.version;
   const updatedByRenovateVersion = pkg.version;
-  return {
+
+  const updatedPrDebugData: PrDebugData = {
     createdInVer: createdByRenovateVersion,
     updatedInVer: updatedByRenovateVersion,
     targetBranch,
   };
+
+  // Add labels to the debug data object.
+  // When to add:
+  // 1. Add it when a new PR is created, i.e., when debugData is undefined.
+  // 2. Add it if an existing PR already has labels in the debug data, confirming that we can update its labels.
+  if (!debugData || is.array(debugData.labels)) {
+    updatedPrDebugData.labels = labels;
+  }
+
+  return updatedPrDebugData;
 }
 
 function hasNotIgnoredReviewers(pr: Pr, config: BranchConfig): boolean {
@@ -243,11 +256,7 @@ export async function ensurePr(
   // Get changelog and then generate template strings
   for (const upgrade of upgrades) {
     // TODO: types (#22198)
-    const upgradeKey = `${upgrade.depType!}-${upgrade.depName!}-${
-      upgrade.manager
-    }-${
-      upgrade.currentVersion ?? upgrade.currentValue!
-    }-${upgrade.newVersion!}`;
+    const upgradeKey = `${upgrade.depType!}-${upgrade.depName!}-${upgrade.manager}-${upgrade.currentVersion ?? ''}-${upgrade.currentValue ?? ''}-${upgrade.newVersion ?? ''}-${upgrade.newValue ?? ''}`;
     if (processedUpgrades.includes(upgradeKey)) {
       continue;
     }
@@ -323,6 +332,7 @@ export async function ensurePr(
     {
       debugData: updatePrDebugData(
         config.baseBranch,
+        prepareLabels(config), // include labels in debug data
         existingPr?.bodyStruct?.debugData,
       ),
     },
@@ -348,10 +358,22 @@ export async function ensurePr(
       const existingPrBodyHash = existingPr.bodyStruct?.hash;
       const newPrTitle = stripEmojis(prTitle);
       const newPrBodyHash = hashBody(prBody);
+
+      const prInitialLabels = existingPr.bodyStruct?.debugData?.labels;
+      const prCurrentLabels = existingPr.labels;
+      const configuredLabels = prepareLabels(config);
+
+      const labelsNeedUpdate = shouldUpdateLabels(
+        prInitialLabels,
+        prCurrentLabels,
+        configuredLabels,
+      );
+
       if (
         existingPr?.targetBranch === config.baseBranch &&
         existingPrTitle === newPrTitle &&
-        existingPrBodyHash === newPrBodyHash
+        existingPrBodyHash === newPrBodyHash &&
+        !labelsNeedUpdate
       ) {
         // adds or-cache for existing PRs
         setPrCache(branchName, prBodyFingerprint, false);
@@ -365,7 +387,7 @@ export async function ensurePr(
         number: existingPr.number,
         prTitle,
         prBody,
-        platformOptions: getPlatformPrOptions(config),
+        platformPrOptions: getPlatformPrOptions(config),
       };
       // PR must need updating
       if (existingPr?.targetBranch !== config.baseBranch) {
@@ -378,6 +400,36 @@ export async function ensurePr(
           'PR base branch has changed',
         );
         updatePrConfig.targetBranch = config.baseBranch;
+      }
+
+      if (labelsNeedUpdate) {
+        logger.debug(
+          {
+            branchName,
+            prCurrentLabels,
+            configuredLabels,
+          },
+          'PR labels have changed',
+        );
+
+        // Divide labels into three categories:
+        // i) addLabels: Labels that need to be added
+        // ii) removeLabels: Labels that need to be removed
+        // iii) labels: New labels for the PR, replacing the old labels array entirely.
+        // This distinction is necessary because different platforms update labels differently
+        // For more details, refer to the updatePr function of each platform.
+
+        const [addLabels, removeLabels] = getChangedLabels(
+          prCurrentLabels,
+          configuredLabels,
+        );
+
+        // for Gitea
+        updatePrConfig.labels = configuredLabels;
+
+        // for GitHub, GitLab
+        updatePrConfig.addLabels = addLabels;
+        updatePrConfig.removeLabels = removeLabels;
       }
       if (existingPrTitle !== newPrTitle) {
         logger.debug(
@@ -439,8 +491,9 @@ export async function ensurePr(
           prTitle,
           prBody,
           labels: prepareLabels(config),
-          platformOptions: getPlatformPrOptions(config),
+          platformPrOptions: getPlatformPrOptions(config),
           draftPR: !!config.draftPR,
+          milestone: config.milestone,
         });
 
         incLimitedValue('PullRequests');

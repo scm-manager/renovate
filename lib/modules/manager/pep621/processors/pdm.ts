@@ -1,9 +1,11 @@
 import is from '@sindresorhus/is';
+import { quote } from 'shlex';
 import { TEMPORARY_ERROR } from '../../../../constants/error-messages';
 import { logger } from '../../../../logger';
 import { exec } from '../../../../util/exec';
 import type { ExecOptions, ToolConstraint } from '../../../../util/exec/types';
 import { getSiblingFileName, readLocalFile } from '../../../../util/fs';
+import { Result } from '../../../../util/result';
 import { PypiDatasource } from '../../../datasource/pypi';
 import type {
   PackageDependency,
@@ -11,14 +13,18 @@ import type {
   UpdateArtifactsResult,
   Upgrade,
 } from '../../types';
-import type { PyProject } from '../schema';
+import { PdmLockfileSchema, type PyProject } from '../schema';
+import type { Pep621ManagerData } from '../types';
 import { depTypes, parseDependencyGroupRecord } from '../utils';
 import type { PyProjectProcessor } from './types';
 
-const pdmUpdateCMD = 'pdm update --no-sync';
+const pdmUpdateCMD = 'pdm update --no-sync --update-eager';
 
 export class PdmProcessor implements PyProjectProcessor {
-  process(project: PyProject, deps: PackageDependency[]): PackageDependency[] {
+  process(
+    project: PyProject,
+    deps: PackageDependency[],
+  ): PackageDependency<Pep621ManagerData>[] {
     const pdm = project.tool?.pdm;
     if (is.nullOrUndefined(pdm)) {
       return deps;
@@ -46,10 +52,41 @@ export class PdmProcessor implements PyProjectProcessor {
       registryUrls.push(source.url);
     }
     for (const dep of deps) {
-      dep.registryUrls = registryUrls;
+      dep.registryUrls = [...registryUrls];
     }
 
     return deps;
+  }
+
+  async extractLockedVersions(
+    project: PyProject,
+    deps: PackageDependency[],
+    packageFile: string,
+  ): Promise<PackageDependency[]> {
+    if (
+      is.nullOrUndefined(project.tool?.pdm) &&
+      project['build-system']?.['build-backend'] !== 'pdm.backend'
+    ) {
+      return Promise.resolve(deps);
+    }
+
+    const lockFileName = getSiblingFileName(packageFile, 'pdm.lock');
+    const lockFileContent = await readLocalFile(lockFileName, 'utf8');
+    if (lockFileContent) {
+      const lockFileMapping = Result.parse(
+        lockFileContent,
+        PdmLockfileSchema.transform(({ lock }) => lock),
+      ).unwrapOrElse({});
+
+      for (const dep of deps) {
+        const packageName = dep.packageName;
+        if (packageName && packageName in lockFileMapping) {
+          dep.lockedVersion = lockFileMapping[packageName];
+        }
+      }
+    }
+
+    return Promise.resolve(deps);
   }
 
   async updateArtifacts(
@@ -82,6 +119,7 @@ export class PdmProcessor implements PyProjectProcessor {
       const execOptions: ExecOptions = {
         cwdFile: packageFileName,
         docker: {},
+        userConfiguredEnv: config.env,
         toolConstraints: [pythonConstraint, pdmConstraint],
       };
 
@@ -130,29 +168,45 @@ export class PdmProcessor implements PyProjectProcessor {
   }
 }
 
-function generateCMDs(updatedDeps: Upgrade[]): string[] {
+function generateCMDs(updatedDeps: Upgrade<Pep621ManagerData>[]): string[] {
   const cmds: string[] = [];
   const packagesByCMD: Record<string, string[]> = {};
   for (const dep of updatedDeps) {
     switch (dep.depType) {
       case depTypes.optionalDependencies: {
-        const [group, name] = dep.depName!.split('/');
+        if (is.nullOrUndefined(dep.managerData?.depGroup)) {
+          logger.once.warn(
+            { dep: dep.depName },
+            'Unexpected optional dependency without group',
+          );
+          continue;
+        }
         addPackageToCMDRecord(
           packagesByCMD,
-          `${pdmUpdateCMD} -G ${group}`,
-          name,
+          `${pdmUpdateCMD} -G ${quote(dep.managerData.depGroup)}`,
+          dep.packageName!,
         );
         break;
       }
       case depTypes.pdmDevDependencies: {
-        const [group, name] = dep.depName!.split('/');
+        if (is.nullOrUndefined(dep.managerData?.depGroup)) {
+          logger.once.warn(
+            { dep: dep.depName },
+            'Unexpected dev dependency without group',
+          );
+          continue;
+        }
         addPackageToCMDRecord(
           packagesByCMD,
-          `${pdmUpdateCMD} -dG ${group}`,
-          name,
+          `${pdmUpdateCMD} -dG ${quote(dep.managerData.depGroup)}`,
+          dep.packageName!,
         );
         break;
       }
+      case depTypes.buildSystemRequires:
+        // build requirements are not locked in the lock files, no need to update.
+        // Reference: https://github.com/pdm-project/pdm/discussions/2869
+        break;
       default: {
         addPackageToCMDRecord(packagesByCMD, pdmUpdateCMD, dep.packageName!);
       }
@@ -160,7 +214,7 @@ function generateCMDs(updatedDeps: Upgrade[]): string[] {
   }
 
   for (const commandPrefix in packagesByCMD) {
-    const packageList = packagesByCMD[commandPrefix].join(' ');
+    const packageList = packagesByCMD[commandPrefix].map(quote).join(' ');
     const cmd = `${commandPrefix} ${packageList}`;
     cmds.push(cmd);
   }

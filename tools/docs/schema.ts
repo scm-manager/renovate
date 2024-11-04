@@ -21,8 +21,20 @@ options.sort((a, b) => {
 });
 const properties = schema.properties as Record<string, any>;
 
+type JsonSchemaBasicType =
+  | 'string'
+  | 'number'
+  | 'integer'
+  | 'boolean'
+  | 'object'
+  | 'array'
+  | 'null';
+type JsonSchemaType = JsonSchemaBasicType | JsonSchemaBasicType[];
+
 function createSingleConfig(option: RenovateOptions): Record<string, unknown> {
-  const temp: Record<string, any> & Partial<RenovateOptions> = {};
+  const temp: Record<string, any> & {
+    type?: JsonSchemaType;
+  } & Omit<Partial<RenovateOptions>, 'type'> = {};
   if (option.description) {
     temp.description = option.description;
   }
@@ -67,7 +79,13 @@ function createSingleConfig(option: RenovateOptions): Record<string, unknown> {
   ) {
     temp.additionalProperties = option.additionalProperties;
   }
-  if (temp.type === 'object' && !option.freeChoice) {
+  if (option.default === null) {
+    temp.type = [option.type, 'null'];
+  }
+  if (
+    (temp.type === 'object' || temp.type?.includes('object')) &&
+    !option.freeChoice
+  ) {
     temp.$ref = '#';
   }
   return temp;
@@ -91,9 +109,21 @@ function addChildrenArrayInParents(): void {
               type: 'object',
               properties: {
                 description: {
-                  type: 'string',
-                  description:
-                    'A custom description for this configuration object',
+                  oneOf: [
+                    {
+                      type: 'array',
+                      items: {
+                        type: 'string',
+                        description:
+                          'A custom description for this configuration object',
+                      },
+                    },
+                    {
+                      type: 'string',
+                      description:
+                        'A custom description for this configuration object',
+                    },
+                  ],
                 },
               },
             },

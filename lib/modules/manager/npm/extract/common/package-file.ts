@@ -47,6 +47,7 @@ export function extractPackageJson(
     resolutions: 'resolutions',
     packageManager: 'packageManager',
     overrides: 'overrides',
+    pnpm: 'pnpm',
   };
 
   for (const depType of Object.keys(depTypes) as (keyof typeof depTypes)[]) {
@@ -82,6 +83,35 @@ export function extractPackageJson(
                 val as unknown as NpmManagerData,
               ),
             );
+          } else if (depType === 'pnpm' && depName === 'overrides') {
+            // pnpm overrides
+            // https://pnpm.io/package_json#pnpmoverrides
+            for (const [overridesKey, overridesVal] of Object.entries(
+              val as unknown as NpmPackageDependency,
+            )) {
+              if (is.string(overridesVal)) {
+                // Newer flat syntax: `parent>parent>child`
+                const packageName = overridesKey.split('>').pop()!;
+                dep = {
+                  depName: overridesKey,
+                  packageName,
+                  depType: 'pnpm.overrides',
+                  ...extractDependency(depName, packageName, overridesVal),
+                };
+                setNodeCommitTopic(dep);
+                // TODO: Is this expected? It's always 'overrides'.
+                dep.prettyDepType = depTypes[depName];
+                deps.push(dep);
+              } else if (is.object(overridesVal)) {
+                // Older nested object syntax: `parent: { parent: { child: version } }`
+                deps.push(
+                  ...extractOverrideDepsRec(
+                    [overridesKey],
+                    overridesVal as unknown as NpmManagerData,
+                  ),
+                );
+              }
+            }
           } else {
             // TODO: fix type #22198
             dep = { ...dep, ...extractDependency(depType, depName, val!) };

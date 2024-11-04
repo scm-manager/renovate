@@ -1,5 +1,6 @@
 import type { BranchStatus } from '../../../types';
-import { GiteaHttp, GiteaHttpOptions } from '../../../util/http/gitea';
+import type { GiteaHttpOptions } from '../../../util/http/gitea';
+import { GiteaHttp } from '../../../util/http/gitea';
 import { getQueryString } from '../../../util/url';
 import type {
   Branch,
@@ -73,6 +74,19 @@ export async function searchRepos(
   }
 
   return res.body.data;
+}
+
+export async function orgListRepos(
+  organization: string,
+  options?: GiteaHttpOptions,
+): Promise<Repo[]> {
+  const url = `${API_PATH}/orgs/${organization}/repos`;
+  const res = await giteaHttp.getJson<Repo[]>(url, {
+    ...options,
+    paginate: true,
+  });
+
+  return res.body;
 }
 
 export async function getRepo(

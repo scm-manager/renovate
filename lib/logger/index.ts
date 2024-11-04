@@ -1,11 +1,14 @@
 import is from '@sindresorhus/is';
 import * as bunyan from 'bunyan';
+import fs from 'fs-extra';
 import { nanoid } from 'nanoid';
+import upath from 'upath';
 import cmdSerializer from './cmd-serializer';
 import configSerializer from './config-serializer';
 import errSerializer from './err-serializer';
 import { once, reset as onceReset } from './once';
 import { RenovateStream } from './pretty-stdout';
+import { getRemappedLevel } from './remap';
 import type { BunyanRecord, Logger } from './types';
 import { ProblemStream, validateLogLevel, withSanitizer } from './utils';
 
@@ -19,16 +22,13 @@ if (is.string(process.env.LOG_LEVEL)) {
   process.env.LOG_LEVEL = process.env.LOG_LEVEL.toLowerCase().trim();
 }
 
-validateLogLevel(process.env.LOG_LEVEL);
 const stdout: bunyan.Stream = {
   name: 'stdout',
-  level:
-    (process.env.LOG_LEVEL as bunyan.LogLevel) ||
-    /* istanbul ignore next: not testable */ 'info',
+  level: validateLogLevel(process.env.LOG_LEVEL, 'info'),
   stream: process.stdout,
 };
 
-// istanbul ignore else: not testable
+// istanbul ignore if: not testable
 if (process.env.LOG_FORMAT !== 'json') {
   // TODO: typings (#9615)
   const prettyStdOut = new RenovateStream() as any;
@@ -61,20 +61,39 @@ const bunyanLogger = bunyan.createLogger({
   ].map(withSanitizer),
 });
 
-const logFactory =
-  (level: bunyan.LogLevelString) =>
-  (p1: any, p2: any): void => {
+const logFactory = (
+  _level: bunyan.LogLevelString,
+): ((p1: unknown, p2: unknown) => void) => {
+  return (p1: any, p2: any): void => {
+    let level = _level;
     if (p2) {
       // meta and msg provided
-      bunyanLogger[level]({ logContext, ...curMeta, ...p1 }, p2);
+      const msg = p2;
+      const meta: Record<string, unknown> = { logContext, ...curMeta, ...p1 };
+      const remappedLevel = getRemappedLevel(msg);
+      // istanbul ignore if: not testable
+      if (remappedLevel) {
+        meta.oldLevel = level;
+        level = remappedLevel;
+      }
+      bunyanLogger[level](meta, msg);
     } else if (is.string(p1)) {
       // only message provided
-      bunyanLogger[level]({ logContext, ...curMeta }, p1);
+      const msg = p1;
+      const meta: Record<string, unknown> = { logContext, ...curMeta };
+      const remappedLevel = getRemappedLevel(msg);
+      // istanbul ignore if: not testable
+      if (remappedLevel) {
+        meta.oldLevel = level;
+        level = remappedLevel;
+      }
+      bunyanLogger[level](meta, msg);
     } else {
       // only meta provided
       bunyanLogger[level]({ logContext, ...curMeta, ...p1 });
     }
   };
+};
 
 const loggerLevels: bunyan.LogLevelString[] = [
   'trace',
@@ -102,6 +121,19 @@ loggerLevels.forEach((loggerLevel) => {
   };
   logger.once[loggerLevel] = logOnceFn as never;
 });
+
+// istanbul ignore if: not easily testable
+if (is.string(process.env.LOG_FILE)) {
+  // ensure log file directory exists
+  const directoryName = upath.dirname(process.env.LOG_FILE);
+  fs.ensureDirSync(directoryName);
+
+  addStream({
+    name: 'logfile',
+    path: process.env.LOG_FILE,
+    level: validateLogLevel(process.env.LOG_FILE_LEVEL, 'debug'),
+  });
+}
 
 export function setContext(value: string): void {
   logContext = value;

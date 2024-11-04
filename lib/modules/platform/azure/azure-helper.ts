@@ -1,8 +1,9 @@
-import {
+import type { WebApiTeam } from 'azure-devops-node-api/interfaces/CoreInterfaces.js';
+import type {
   GitCommit,
-  GitPullRequestMergeStrategy,
   GitRef,
 } from 'azure-devops-node-api/interfaces/GitInterfaces.js';
+import { GitPullRequestMergeStrategy } from 'azure-devops-node-api/interfaces/GitInterfaces.js';
 import { logger } from '../../../logger';
 import { streamToString } from '../../../util/streams';
 import { getNewBranchName } from '../util';
@@ -94,7 +95,7 @@ export async function getFile(
           return null;
         }
       }
-    } catch (error) {
+    } catch {
       // it 's not a JSON, so I send the content directly with the line under
     }
 
@@ -119,6 +120,9 @@ export async function getMergeMethod(
   branchRef?: string | null,
   defaultBranch?: string,
 ): Promise<GitPullRequestMergeStrategy> {
+  logger.debug(
+    `getMergeMethod(branchRef=${branchRef}, defaultBranch=${defaultBranch})`,
+  );
   type Scope = {
     repositoryId: string;
     refName?: string;
@@ -132,7 +136,7 @@ export async function getMergeMethod(
     ) {
       return true;
     }
-    if (scope.repositoryId !== repoId) {
+    if (scope.repositoryId !== repoId && scope.repositoryId !== null) {
       return false;
     }
     if (!branchRef) {
@@ -152,9 +156,9 @@ export async function getMergeMethod(
     .filter((p) => p.settings.scope.some(isRelevantScope))
     .map((p) => p.settings)[0];
 
-  logger.trace(
+  logger.debug(
     // TODO: types (#22198)
-    `getMergeMethod(${repoId}, ${project}, ${branchRef!}) determining mergeMethod from matched policy:\n${JSON.stringify(
+    `getMergeMethod(branchRef=${branchRef!}) determining mergeMethod from matched policy:\n${JSON.stringify(
       policyConfigurations,
       null,
       4,
@@ -171,7 +175,26 @@ export async function getMergeMethod(
           ] as never as GitPullRequestMergeStrategy,
       )
       .find((p) => p)!;
-  } catch (err) {
+  } catch {
     return GitPullRequestMergeStrategy.NoFastForward;
   }
+}
+
+export async function getAllProjectTeams(
+  projectId: string,
+): Promise<WebApiTeam[]> {
+  const allTeams: WebApiTeam[] = [];
+  const azureApiCore = await azureApi.coreApi();
+  const top = 100;
+  let skip = 0;
+  let length = 0;
+
+  do {
+    const teams = await azureApiCore.getTeams(projectId, undefined, top, skip);
+    length = teams.length;
+    allTeams.push(...teams);
+    skip += top;
+  } while (top <= length);
+
+  return allTeams;
 }

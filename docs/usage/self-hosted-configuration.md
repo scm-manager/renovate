@@ -63,6 +63,33 @@ But before you disable templating completely, try the `allowedPostUpgradeCommand
 
 ## allowScripts
 
+## allowedEnv
+
+Bot administrators can allow users to configure custom environment variables within repo config.
+Only environment variables matching the list will be accepted in the [`env`](./configuration-options.md#env) configuration.
+
+Examples:
+
+```json title="renovate.json"
+{
+  "env": {
+    "SOME_ENV_VARIABLE": "some_value",
+    "EXTRA_ENV_NAME": "value"
+  }
+}
+```
+
+The above would require `allowedEnv` to be configured similar to the following:
+
+```js title="config.js"
+module.exports = {
+  allowedEnv: ['SOME_ENV_*', 'EXTRA_ENV_NAME'],
+};
+```
+
+`allowedEnv` values can be exact match header names, glob patterns, or regex patterns.
+For more details on the syntax and supported patterns, see Renovate's [String Pattern Matching documentation](./string-pattern-matching.md).
+
 ## allowedHeaders
 
 `allowedHeaders` can be useful when a registry uses a authentication system that's not covered by Renovate's default credential handling in `hostRules`.
@@ -70,6 +97,7 @@ By default, all headers starting with "X-" are allowed.
 If needed, you can allow additional headers with the `allowedHeaders` option.
 Any set `allowedHeaders` overrides the default "X-" allowed headers, so you should include them in your config if you wish for them to remain allowed.
 The `allowedHeaders` config option takes an array of minimatch-compatible globs or re2-compatible regex strings.
+For more details on this syntax see Renovate's [string pattern matching documentation](./string-pattern-matching.md).
 
 Examples:
 
@@ -185,6 +213,38 @@ For example:
 }
 ```
 
+<!-- prettier-ignore -->
+!!! note
+    On Gitea/Forgejo, you can't use `autodiscoverTopics` together with `autodiscoverNamespaces` because both platforms do not support this.
+    Topics are preferred and `autodiscoverNamespaces` will be ignored when you configure `autodiscoverTopics` on Gitea/Forgejo.
+
+## autodiscoverProjects
+
+You can use this option to filter the list of autodiscovered repositories by project names.
+This feature is useful for users who want Renovate to only work on repositories within specific projects or exclude certain repositories from being processed.
+
+```json title="Example for Bitbucket"
+{
+  "platform": "bitbucket",
+  "autodiscoverProjects": ["a-group", "!another-group/some-subgroup"]
+}
+```
+
+The `autodiscoverProjects` config option takes an array of minimatch-compatible globs or RE2-compatible regex strings.
+For more details on this syntax see Renovate's [string pattern matching documentation](./string-pattern-matching.md).
+
+## autodiscoverRepoOrder
+
+The order method for autodiscover server side repository search.
+
+> If multiple `autodiscoverTopics` are used resulting order will be per topic not global.
+
+## autodiscoverRepoSort
+
+The sort method for autodiscover server side repository search.
+
+> If multiple `autodiscoverTopics` are used resulting order will be per topic not global.
+
 ## autodiscoverTopics
 
 Some platforms allow you to add tags, or topics, to repositories and retrieve repository lists by specifying those
@@ -267,6 +327,10 @@ Results which are soft expired are reused in the following manner:
 - The `etag` from the cached results will be reused, and may result in a 304 response, meaning cached results are revalidated
 - If an error occurs when querying the `npmjs` registry, then soft expired results will be reused if they are present
 
+## cachePrivatePackages
+
+In the self-hosted setup, use option to enable caching of private packages to improve performance.
+
 ## cacheTtlOverride
 
 Utilize this key-value map to override the default package cache TTL values for a specific namespace. This object contains pairs of namespaces and their corresponding TTL values in minutes.
@@ -298,6 +362,41 @@ Use this option if you need such downloads to be stored outside of Renovate's re
 ## customEnvVariables
 
 This configuration will be applied after all other environment variables so you can use it to override defaults.
+
+<!-- prettier-ignore -->
+!!! warning
+    Do not configure any secret values directly into `customEnvVariables` because they may be logged to stdout.
+    Instead, configure them into `secrets` first so that they will be redacted in logs.
+
+If configuring secrets in to `customEnvVariables`, take this approach:
+
+```js
+{
+  secrets: {
+    SECRET_TOKEN: process.env.SECRET_TOKEN,
+  },
+  customEnvVariables: {
+    SECRET_TOKEN: '{{ secrets.SECRET_TOKEN }}',
+  },
+}
+```
+
+The above configuration approach will mean the values are redacted in logs like in the following example:
+
+```
+         "secrets": {"SECRET_TOKEN": "***********"},
+         "customEnvVariables": {"SECRET_TOKEN": "{{ secrets.SECRET_TOKEN }}"},
+```
+
+## deleteConfigFile
+
+If set to `true` Renovate tries to delete the self-hosted config file after reading it.
+
+The process that runs Renovate must have the correct permissions to delete the config file.
+
+<!-- prettier-ignore -->
+!!! tip
+    You can tell Renovate where to find your config file with the `RENOVATE_CONFIG_FILE` environment variable.
 
 ## detectGlobalManagerConfig
 
@@ -414,7 +513,14 @@ You can use `dockerCliOptions` to pass Docker CLI options to Renovate's sidecar 
 
 For example, `{"dockerCliOptions": "--memory=4g"}` will add a CLI flag to the `docker run` command that limits the amount of memory Renovate's sidecar Docker container can use to 4 gigabytes.
 
-Read the [Docker Docs, configure runtime resource contraints](https://docs.docker.com/config/containers/resource_constraints/) to learn more.
+Read the [Docker Docs, configure runtime resource constraints](https://docs.docker.com/config/containers/resource_constraints/) to learn more.
+
+## dockerMaxPages
+
+By default, Renovate will fetch a maximum of 20 pages when looking up Docker tags on Docker registries.
+
+If set to an positive integer, Renovate will use this value as the maximum page number.
+Setting a different limit is useful for registries that ignore the `n` parameter in Renovate's query string and thus only return 50 tags per page.
 
 ## dockerSidecarImage
 
@@ -430,7 +536,7 @@ You would put this in your configuration file:
 }
 ```
 
-Now when Renovate pulls a new `sidecar` image, the final image is `ghcr.io/containerbase/sidecar` instead of `docker.io/containerbase/sidecar`.
+Now when Renovate pulls a new `sidecar` image, the final image is `ghcr.io/your_company/sidecar` instead of `ghcr.io/containerbase/sidecar`.
 
 ## dockerUser
 
@@ -468,6 +574,12 @@ You can choose from the following behaviors for the `dryRun` config option:
 
 Information provided mainly in debug log level.
 
+## encryptedWarning
+
+Use this if you want to stop supporting `encrypted` configuration capabilities but want to warn users first to migrate.
+
+If set to a string value, Renovate will log warnings with the `encryptedWarning` text, meaning the message will be visible to users such as on the Dependency Dashboard.
+
 ## endpoint
 
 ## executionTimeout
@@ -502,6 +614,12 @@ In practice, it is implemented by converting the `force` configuration into a `p
 This is set to `true` by default, meaning that any settings (such as `schedule`) take maximum priority even against custom settings existing inside individual repositories.
 It will also override any settings in `packageRules`.
 
+## forkCreation
+
+This configuration lets you disable the runtime forking of repositories when running in "fork mode".
+
+Usually you will need to keep this as the default `true`, and only set to `false` if you have some out of band process to handle the creation of forks.
+
 ## forkOrg
 
 This configuration option lets you choose an organization you want repositories forked into when "fork mode" is enabled.
@@ -524,6 +642,10 @@ If this value is configured then Renovate:
 
 Renovate will then create branches on the fork and opens Pull Requests on the parent repository.
 
+<!-- prettier-ignore -->
+!!! note
+    Forked repositories will always be skipped when `forkToken` is set, even if `includeForks` is true.
+
 ## gitNoVerify
 
 Controls when Renovate passes the `--no-verify` flag to `git`.
@@ -533,7 +655,9 @@ To learn more about Git hooks, read the [Pro Git 2 book, section on Git Hooks](h
 
 ## gitPrivateKey
 
-This should be an armored private key, so the type you get from running `gpg --export-secret-keys --armor 92066A17F0D1707B4E96863955FEF5171C45FAE5 > private.key`.
+This is a private PGP or SSH key for signing Git commits.
+
+For PGP, it should be an armored private key, so the type you get from running `gpg --export-secret-keys --armor 92066A17F0D1707B4E96863955FEF5171C45FAE5 > private.key`.
 Replace the newlines with `\n` before adding the resulting single-line value to your bot's config.
 
 <!-- prettier-ignore -->
@@ -543,8 +667,8 @@ Replace the newlines with `\n` before adding the resulting single-line value to 
 It will be loaded _lazily_.
 Before the first commit in a repository, Renovate will:
 
-1. Run `gpg import` (if you haven't before)
-1. Run `git config user.signingkey` and `git config commit.gpgsign true`
+1. Run `gpg import` (if you haven't before) when using PGP
+1. Run `git config user.signingkey`, `git config commit.gpgsign true` and `git config gpg.format`
 
 The `git` commands are run locally in the cloned repo instead of globally.
 This reduces the chance of unintended consequences with global Git configs on shared systems.
@@ -583,20 +707,111 @@ Use the `extends` field instead of this if, for example, you need the ability fo
     When Renovate resolves `globalExtends` it does not fully process the configuration.
     This means that Renovate does not have the authentication it needs to fetch private things.
 
+## httpCacheTtlDays
+
+This option sets the number of days that Renovate will cache HTTP responses.
+The default value is 90 days.
+Value of `0` means no caching.
+
+<!-- prettier-ignore -->
+!!! warning
+    When you set `httpCacheTtlDays` to `0`, Renovate will remove the cached HTTP data.
+
 ## includeMirrors
 
 By default, Renovate does not autodiscover repositories that are mirrors.
 
 Change this setting to `true` to include repositories that are mirrors as Renovate targets.
 
+## inheritConfig
+
+When you enable this option, Renovate will look for the `inheritConfigFileName` file in the `inheritConfigRepoName` repository before processing a repository, and read this in as config.
+
+If the repository is in a nested organization or group on a supported platform such as GitLab, such as `topGroup/nestedGroup/projectName` then Renovate will look in `topGroup/nestedGroup/renovate-config`.
+
+If `inheritConfig` is `true` but the inherited config file does _not_ exist then Renovate will proceed without warning.
+If the file exists but cannot be parsed, then Renovate will raise a config warning issue and abort the job.
+
+The inherited config may include all valid repository config and these config options:
+
+- `bbUseDevelopmentBranch`
+- `onboarding`
+- `onboardingBranch`
+- `onboardingCommitMessage`
+- `onboardingConfig`
+- `onboardingConfigFileName`
+- `onboardingNoDeps`
+- `onboardingPrTitle`
+- `onboardingRebaseCheckbox`
+- `requireConfig`
+
+<!-- prettier-ignore -->
+!!! note
+    The above list is prepared manually and may become out of date.
+    Consult the self-hosted configuration docs and look for `inheritConfigSupport` values there for the definitive list.
+
+This way organizations can change/control the default behavior, like whether configs are required and how repositories are onboarded.
+
+We disabled `inheritConfig` in the Mend Renovate App to avoid wasting millions of API calls per week.
+This is because each `404` response from the GitHub API due to a missing org inherited config counts as a used API call.
+We will add a smart/dynamic approach in future, so that we can selectively enable `inheritConfig` per organization.
+
+## inheritConfigFileName
+
+Change this setting if you want Renovate to look for a different file name within the `inheritConfigRepoName` repository.
+You may use nested files, for example: `"some-dir/config.json"`.
+
+## inheritConfigRepoName
+
+Change this setting if you want Renovate to look in an alternative repository for the inherited config.
+The repository must be on the same platform and endpoint, and Renovate's token must have `read` permissions to the repository.
+
+## inheritConfigStrict
+
+By default Renovate will silently (debug log message only) ignore cases where `inheritConfig=true` but no inherited config is found.
+When you set `inheritConfigStrict=true` then Renovate will abort the run and raise a config error if Renovate can't find the inherited config.
+
+<!-- prettier-ignore -->
+!!! warning
+    Only set this config option to `true` if _every_ organization has an inherited config file _and_ you want to make sure Renovate _always_ uses that inherited config.
+
 ## logContext
 
 `logContext` is included with each log entry only if `logFormat="json"` - it is not included in the pretty log output.
 If left as default (null), a random short ID will be selected.
 
-## logFile
+## mergeConfidenceDatasources
 
-## logFileLevel
+This feature is applicable only if you have an access token for Mend's Merge Confidence API.
+
+If set, Renovate will query the merge-confidence JSON API only for datasources that are part of this list.
+Otherwise, it queries all the supported datasources (check default value).
+
+Example:
+
+```js
+modules.exports = {
+  mergeConfidenceDatasources: ['npm'],
+};
+```
+
+## mergeConfidenceEndpoint
+
+This feature is applicable only if you have an access token for Mend's Merge Confidence API.
+
+If set, Renovate will retrieve Merge Confidence data by querying this API.
+Otherwise, it will use the default URL, which is <https://developer.mend.io/>.
+
+If you use the Mend Renovate Enterprise Edition (Renovate EE) and:
+
+- have a static merge confidence token that you set via `MEND_RNV_MC_TOKEN`
+- _or_ set `MEND_RNV_MC_TOKEN` to `auto`
+
+Then you must set this variable at the _server_ and the _workers_.
+
+But if you have specified the token as a [`matchConfidence`](configuration-options.md#matchconfidence) `hostRule`, you only need to set this variable at the _workers_.
+
+This feature is in private beta.
 
 ## migratePresets
 
@@ -650,8 +865,12 @@ Falls back to `renovate.json` if the name provided is not valid.
 
 ## onboardingNoDeps
 
-Set this to `true` if you want Renovate to create an onboarding PR even if no dependencies are found.
-Otherwise, Renovate skips onboarding a repository if it finds no dependencies in it.
+The default `auto` setting is converted to `disabled` if `autodiscoverRepositories` is `true`, or converted to `enabled` if false.
+
+In other words, the default behavior is:
+
+- If you run Renovate on discovered repositories then it will skip onboarding those without dependencies detected, but
+- If you run Renovate on _specific_ repositories then Renovate will onboard all such repositories even if no dependencies are found
 
 ## onboardingPrTitle
 
@@ -720,7 +939,7 @@ This private key is used to decrypt config files.
 The corresponding public key can be used to create encrypted values for config files.
 If you want a UI to encrypt values you can put the public key in a HTML page similar to <https://app.renovatebot.com/encrypt>.
 
-To create the key pair with GPG use the following commands:
+To create the PGP key pair with GPG use the following commands:
 
 - `gpg --full-generate-key` and follow the prompts to generate a key. Name and email are not important to Renovate, and do not configure a passphrase. Use a 4096bit key.
 
@@ -774,6 +993,36 @@ sub   rsa4096 2021-09-10 [E]
 
 </details>
 
+<!-- prettier-ignore -->
+!!! note
+    If you use GnuPG `v2.4` (or newer) to generate the key, then you must disable `AEAD` preferences.
+    This is needed to allow Renovate to decrypt the encrypted values.
+
+<details><summary>key edit log</summary>
+
+```bash
+❯ gpg --edit-key renovate@whitesourcesoftware.com
+gpg> showpref
+[ultimate] (1). Renovate Bot <renovate@whitesourcesoftware.com>
+     Cipher: AES256, AES192, AES, 3DES
+     AEAD: OCB, EAX
+     Digest: SHA512, SHA384, SHA256, SHA224, SHA1
+     Compression: ZLIB, BZIP2, ZIP, Uncompressed
+     Features: MDC, AEAD, Keyserver no-modify
+
+gpg> setpref AES256 AES192 AES 3DES SHA512 SHA384 SHA256 SHA224 SHA1 ZLIB BZIP2 ZIP
+Set preference list to:
+     Cipher: AES256, AES192, AES, 3DES
+     AEAD:
+     Digest: SHA512, SHA384, SHA256, SHA224, SHA1
+     Compression: ZLIB, BZIP2, ZIP, Uncompressed
+     Features: MDC, Keyserver no-modify
+Really update the preferences? (y/N) y
+gpg> save
+```
+
+</details>
+
 - Copy the key ID from the output (`794B820F34B34A8DF32AADB20649CEXAMPLEONLY` in the above example) or run `gpg --list-secret-keys` if you forgot to take a copy
 - Run `gpg --armor --export-secret-keys YOUR_NEW_KEY_ID > renovate-private-key.asc` to generate an armored (text-based) private key file
 - Run `gpg --armor --export YOUR_NEW_KEY_ID > renovate-public-key.asc` to generate an armored (text-based) public key file
@@ -781,7 +1030,7 @@ sub   rsa4096 2021-09-10 [E]
 The private key should then be added to your Renovate Bot global config (either using `privateKeyPath` or exporting it to the `RENOVATE_PRIVATE_KEY` environment variable).
 The public key can be used to replace the existing key in <https://app.renovatebot.com/encrypt> for your own use.
 
-Any encrypted secrets using GPG must have a mandatory organization/group scope, and optionally can be scoped for a single repository only.
+Any PGP-encrypted secrets must have a mandatory organization/group scope, and optionally can be scoped for a single repository only.
 The reason for this is to avoid "replay" attacks where someone could learn your encrypted secret and then reuse it in their own Renovate repositories.
 Instead, with scoped secrets it means that Renovate ensures that the organization and optionally repository values encrypted with the secret match against the running repository.
 
@@ -796,10 +1045,14 @@ Instead, with scoped secrets it means that Renovate ensures that the organizatio
 Use this field if you need to perform a "key rotation" and support more than one keypair at a time.
 Decryption with this key will be tried after `privateKey`.
 
-If you are migrating from the legacy public key encryption approach to use GPG, then move your legacy private key from `privateKey` to `privateKeyOld` and then put your new GPG private key in `privateKey`.
-Doing so will mean that Renovate will first try to decrypt using the GPG key but fall back to the legacy key and try that next.
+If you are migrating from the legacy public key encryption approach to use a PGP key, then move your legacy private key from `privateKey` to `privateKeyOld` and then put your new PGP private key in `privateKey`.
+Doing so will mean that Renovate will first try to decrypt using the PGP key but fall back to the legacy key and try that next.
 
 You can remove the `privateKeyOld` config option once all the old encrypted values have been migrated, or if you no longer want to support the old key and let the processing of repositories fail.
+
+<!-- prettier-ignore -->
+!!! note
+    Renovate now logs a warning whenever repositories use non-PGP encrypted config variables.
 
 ## privateKeyPath
 
@@ -831,13 +1084,37 @@ For TLS/SSL-enabled connections, use rediss prefix
 
 Example URL structure: `rediss://[[username]:[password]]@localhost:6379/0`.
 
+Renovate also supports connecting to Redis clusters as well. In order to connect to a cluster, provide the connection string using the `redis+cluster` or `rediss+cluster` schema as appropriate.
+
+Example URL structure: `redis+cluster://[[username]:[password]]@redis.cluster.local:6379/0`
+
+## reportPath
+
+`reportPath` describes the location where the report is written to.
+
+If [`reportType`](#reporttype) is set to `file`, then set `reportPath` to a filepath.
+For example: `/foo/bar.json`.
+
+If the value `s3` is used in [`reportType`](#reporttype), then use a S3 URI.
+For example: `s3://bucket-name/key-name`.
+
+## reportType
+
+Defines how the report is exposed:
+
+- `<unset>` If unset, no report will be provided, though the debug logs will still have partial information of the report
+- `logging` The report will be printed as part of the log messages on `INFO` level
+- `file` The report will be written to a path provided by [`reportPath`](#reportpath)
+- `s3` The report is pushed to an S3 bucket defined by [`reportPath`](#reportpath). This option reuses [`s3Endpoint`](#s3endpoint) and [`s3PathStyle`](#s3pathstyle)
+
 ## repositories
 
-Elements in the `repositories` array can be an object if you wish to define more settings:
+Elements in the `repositories` array can be an object if you wish to define more settings.
+Example:
 
 ```js
 {
-  repositories: [{ repository: 'g/r1', bumpVersion: true }, 'g/r2'];
+  repositories: [{ repository: 'g/r1', bumpVersion: 'patch' }, 'g/r2'];
 }
 ```
 
@@ -855,17 +1132,9 @@ JSON files will be stored inside the `cacheDir` beside the existing file-based p
 }
 ```
 
-<!-- prettier-ignore -->
-!!! note
-    [IAM is supported](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/loading-node-credentials-iam.html) when running Renovate within an EC2 instance in an ECS cluster. In this case, no extra environment variables are required.
-    Otherwise, the following environment variables should be set for the S3 client to work.
-
-```
-    AWS_ACCESS_KEY_ID
-    AWS_SECRET_ACCESS_KEY
-    AWS_SESSION_TOKEN
-    AWS_REGION
-```
+Renovate uses the [AWS SDK for JavaScript V3](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/welcome.html) to connect to the S3 instance.
+Therefore, Renovate supports all the authentication methods supported by the AWS SDK.
+Read more about the default credential provider chain for AWS SDK for JavaScript V3 [here](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/Package/-aws-sdk-credential-providers/#fromnodeproviderchain).
 
 <!-- prettier-ignore -->
 !!! tip
@@ -894,6 +1163,23 @@ The combinations of `requireConfig` and `onboarding` are:
 | `requireConfig=required` | An onboarding PR will be created if no config file exists. If the onboarding PR is closed and there's no config file, then the repository is skipped.   | Repository is skipped unless a config file is added manually. |
 | `requireConfig=optional` | An onboarding PR will be created if no config file exists. If the onboarding PR is closed and there's no config file, the repository will be processed. | Repository is processed regardless of config file presence.   |
 | `requireConfig=ignored`  | No onboarding PR will be created and repo will be processed while ignoring any config file present.                                                     | Repository is processed, any config file is ignored.          |
+
+## s3Endpoint
+
+If set, Renovate will use this string as the `endpoint` when creating the AWS S3 client instance.
+
+## s3PathStyle
+
+If set, Renovate will enable `forcePathStyle` when creating the AWS S3 client instance.
+
+For example:
+
+| `s3PathStyle` | Path                               |
+| ------------- | ---------------------------------- |
+| `off`         | `https://bucket.s3.amazonaws.com/` |
+| `on`          | `https://s3.amazonaws.com/bucket/` |
+
+Read the [AWS S3 docs, Interface BucketEndpointInputConfig](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/clients/client-s3/interfaces/bucketendpointinputconfig.html) to learn more about path-style URLs.
 
 ## secrets
 
@@ -938,12 +1224,6 @@ It could then be used in a repository config or preset like so:
 
 Secret names must start with an upper or lower case character and can have only characters, digits, or underscores.
 
-## skipInstalls
-
-By default, Renovate will use the most efficient approach to updating package files and lock files, which in most cases skips the need to perform a full module install by the bot.
-If this is set to false, then a full install of modules will be done.
-This is currently applicable to `npm` only, and only used in cases where bugs in `npm` result in incorrect lock files being updated.
-
 ## token
 
 ## unicodeEmoji
@@ -956,14 +1236,16 @@ For example: `:warning:` will be replaced with `⚠️`.
 Some cloud providers offer services to receive metadata about the current instance, for example [AWS Instance metadata](https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/ec2-instance-metadata.html) or [GCP VM metadata](https://cloud.google.com/compute/docs/metadata/overview).
 You can control if Renovate should try to access these services with the `useCloudMetadataServices` config option.
 
+## userAgent
+
+If set to any string, Renovate will use this as the `user-agent` it sends with HTTP requests.
+Otherwise, it will default to `RenovateBot/${renovateVersion} (https://github.com/renovatebot/renovate)`.
+
 ## username
 
-You may need to set a `username` if you:
-
-- use the Bitbucket platform, or
-- use a self-hosted GitHub App with CLI (required)
-
-If you're using a Personal Access Token (PAT) to authenticate then you should not set a `username`.
+The only time where `username` is required is if using `username` + `password` credentials for the `bitbucket` platform.
+You don't need to configure `username` directly if you have already configured `token`.
+Renovate will use the token to discover its username on the platform, including if you're running Renovate as a GitHub App.
 
 ## writeDiscoveredRepos
 
