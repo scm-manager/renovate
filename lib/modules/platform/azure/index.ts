@@ -1,6 +1,7 @@
 import { setTimeout } from 'timers/promises';
 import is from '@sindresorhus/is';
 import type {
+  GitItem,
   GitPullRequest,
   GitPullRequestCommentThread,
   GitStatus,
@@ -9,6 +10,7 @@ import type {
 import {
   GitPullRequestMergeStrategy,
   GitStatusState,
+  GitVersionType,
   PullRequestStatus,
 } from 'azure-devops-node-api/interfaces/GitInterfaces.js';
 import {
@@ -144,25 +146,36 @@ export async function getRawFile(
       return null;
     }
 
+    let item: GitItem | undefined;
     const versionDescriptor: GitVersionDescriptor = {
       version: branchOrTag,
     } satisfies GitVersionDescriptor;
+    // Try to get file from repo with tag first, if not found, then try with branch #36835
+    for (const versionType of [GitVersionType.Tag, GitVersionType.Branch]) {
+      versionDescriptor.versionType = versionType;
 
-    const item = await azureApiGit.getItem(
-      repoId, // repositoryId
-      fileName, // path
-      undefined, // project
-      undefined, // scopePath
-      undefined, // recursionLevel
-      undefined, // includeContentMetadata
-      undefined, // latestProcessedChange
-      undefined, // download
-      branchOrTag ? versionDescriptor : undefined, // versionDescriptor
-      true, // includeContent
-    );
-
+      item = await azureApiGit.getItem(
+        repoId, // repositoryId
+        fileName, // path
+        undefined, // project
+        undefined, // scopePath
+        undefined, // recursionLevel
+        undefined, // includeContentMetadata
+        undefined, // latestProcessedChange
+        undefined, // download
+        branchOrTag ? versionDescriptor : undefined, // versionDescriptor
+        true, // includeContent
+      );
+      if (item) {
+        break; // exit loop if item is found
+      } else {
+        logger.debug(
+          `File: ${fileName} not found in ${repoName} with ${versionType}: ${branchOrTag}`,
+        );
+      }
+    }
     return item?.content ?? null;
-  } catch (err) /* istanbul ignore next */ {
+  } catch (err) /* v8 ignore start */ {
     if (
       err.message?.includes('<title>Azure DevOps Services Unavailable</title>')
     ) {
@@ -178,7 +191,7 @@ export async function getRawFile(
       throw new ExternalHostError(err, id);
     }
     throw err;
-  }
+  } /* v8 ignore stop */
 }
 
 export async function getJsonFile(
@@ -193,6 +206,7 @@ export async function getJsonFile(
 export async function initRepo({
   repository,
   cloneSubmodules,
+  cloneSubmodulesFilter,
 }: RepoParams): Promise<RepoResult> {
   logger.debug(`initRepo("${repository}")`);
   config = { repository } as Config;
@@ -208,11 +222,11 @@ export async function initRepo({
     logger.debug('Repository is disabled- throwing error to abort renovation');
     throw new Error(REPOSITORY_ARCHIVED);
   }
-  // istanbul ignore if
+  /* v8 ignore start */
   if (!repo.defaultBranch) {
     logger.debug('Repo is empty');
     throw new Error(REPOSITORY_EMPTY);
-  }
+  } /* v8 ignore stop */
   // TODO #22198
   config.repoId = repo.id!;
 
@@ -240,6 +254,7 @@ export async function initRepo({
     url,
     extraCloneOpts: getStorageExtraCloneOpts(opts),
     cloneSubmodules,
+    cloneSubmodulesFilter,
   });
   const repoConfig: RepoResult = {
     defaultBranch,
@@ -259,7 +274,11 @@ export async function getPrList(): Promise<AzurePr[]> {
     do {
       fetchedPrs = await azureApiGit.getPullRequests(
         config.repoId,
-        { status: 4 },
+        {
+          status: 4,
+          // fetch only prs directly created on the repo and not by forks
+          sourceRepositoryId: config.project,
+        },
         config.project,
         0,
         skip,
@@ -607,12 +626,12 @@ export async function updatePr({
     const existingIndex = config.prList.findIndex(
       (item) => item.number === prNo,
     );
-    // istanbul ignore if: should not happen
+    /* v8 ignore start: should not happen */
     if (existingIndex === -1) {
       logger.warn({ prNo }, 'PR not found in cache');
       // Add to cache
       config.prList.push(prToCache);
-    } else {
+    } /* v8 ignore stop */ else {
       // overwrite existing PR in cache
       config.prList[existingIndex] = prToCache;
     }
@@ -820,11 +839,13 @@ export async function mergePr({
 
     if (!isClosed) {
       logger.warn(
-        { pullRequestId, status: pr.status },
-        `Expected PR to have status ${
-          PullRequestStatus[PullRequestStatus.Completed]
-          // TODO #22198
-        }. However, it is ${PullRequestStatus[pr.status!]}.`,
+        {
+          pullRequestId,
+          status: pr.status,
+          expectedPRStatus: PullRequestStatus[PullRequestStatus.Completed],
+          actualPRStatus: PullRequestStatus[pr.status!],
+        },
+        'Expected PR to have completed status. However, the PR has a different status',
       );
     }
     return true;
@@ -853,37 +874,37 @@ export function maxBodyLength(): number {
   return 4000;
 }
 
-/* istanbul ignore next */
+/* v8 ignore start */
 export function findIssue(): Promise<Issue | null> {
   // TODO: Needs implementation (#9592)
   logger.debug(`findIssue() is not implemented`);
   return Promise.resolve(null);
-}
+} /* v8 ignore stop */
 
-/* istanbul ignore next */
+/* v8 ignore start */
 export function ensureIssue(): Promise<EnsureIssueResult | null> {
   // TODO: Needs implementation (#9592)
   logger.debug(`ensureIssue() is not implemented`);
   return Promise.resolve(null);
-}
+} /* v8 ignore stop */
 
-/* istanbul ignore next */
+/* v8 ignore start */
 export function ensureIssueClosing(): Promise<void> {
   return Promise.resolve();
-}
+} /* v8 ignore stop */
 
-/* istanbul ignore next */
+/* v8 ignore start */
 export function getIssueList(): Promise<Issue[]> {
   logger.debug(`getIssueList()`);
   // TODO: Needs implementation (#9592)
   return Promise.resolve([]);
-}
+} /* v8 ignore stop */
 
 async function getUserIds(users: string[]): Promise<User[]> {
   const azureApiGit = await azureApi.gitApi();
   const azureApiCore = await azureApi.coreApi();
   const repos = await azureApiGit.getRepositories();
-  const repo = repos.filter((c) => c.id === config.repoId)[0];
+  const repo = repos.find((c) => c.id === config.repoId)!;
   const requiredReviewerPrefix = 'required:';
   const validReviewers = new Set<string>();
 

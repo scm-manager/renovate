@@ -1,5 +1,7 @@
+import is from '@sindresorhus/is';
 import { logger } from '../../../logger';
 import { coerceArray } from '../../../util/array';
+import { getEnv } from '../../../util/env';
 import { findLocalSiblingOrParent, readLocalFile } from '../../../util/fs';
 import { api as versioning } from '../../versioning/cargo';
 import type {
@@ -24,7 +26,7 @@ const DEFAULT_REGISTRY_ID = 'crates-io';
 
 function getCargoIndexEnv(registryName: string): string | null {
   const registry = registryName.toUpperCase().replaceAll('-', '_');
-  return process.env[`CARGO_REGISTRIES_${registry}_INDEX`] ?? null;
+  return getEnv()[`CARGO_REGISTRIES_${registry}_INDEX`] ?? null;
 }
 
 function extractFromSection(
@@ -123,7 +125,7 @@ function extractCargoRegistries(config: CargoConfig): CargoRegistries {
 function resolveRegistryIndex(
   registryName: string,
   config: CargoConfig,
-  originalNames: Set<string> = new Set(),
+  originalNames = new Set<string>(),
 ): CargoRegistryUrl {
   // if we have a source replacement, follow that.
   // https://doc.rust-lang.org/cargo/reference/source-replacement.html
@@ -133,7 +135,7 @@ function resolveRegistryIndex(
       `Replacing index of cargo registry ${registryName} with ${replacementName}`,
     );
     if (originalNames.has(replacementName)) {
-      logger.warn(`${registryName} cargo registry resolves to itself`);
+      logger.warn({ registryName }, 'cargo registry resolves to itself');
       return null;
     }
     return resolveRegistryIndex(
@@ -248,7 +250,15 @@ export async function extractPackageFile(
   const packageSection = cargoManifest.package;
   let version: string | undefined = undefined;
   if (packageSection) {
-    version = packageSection.version;
+    if (is.string(packageSection.version)) {
+      version = packageSection.version;
+    } else if (
+      is.object(packageSection.version) &&
+      cargoManifest.workspace?.package?.version
+    ) {
+      // TODO: Support reading from parent workspace manifest?
+      version = cargoManifest.workspace.package.version;
+    }
   }
 
   const lockFileName = await findLocalSiblingOrParent(

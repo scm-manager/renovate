@@ -172,6 +172,7 @@ describe('config/migration', () => {
       expect(migratedConfig.automerge).toBe(false);
       expect(migratedConfig.packageRules).toHaveLength(11);
       expect(migratedConfig.hostRules).toHaveLength(1);
+      expect(migratedConfig.baseBranchPatterns).toMatchObject(['next']);
     });
 
     it('migrates before and after schedules', () => {
@@ -391,7 +392,7 @@ describe('config/migration', () => {
       const { isMigrated, migratedConfig } =
         configMigration.migrateConfig(config);
       expect(migratedConfig).toEqual({
-        baseBranches: [],
+        baseBranchPatterns: [],
         commitMessage: 'test',
         ignorePaths: [],
         includePaths: ['test'],
@@ -400,7 +401,7 @@ describe('config/migration', () => {
       expect(isMigrated).toBeTrue();
     });
 
-    it('it migrates preset strings to array', () => {
+    it('migrates preset strings to array', () => {
       let config: TestRenovateConfig;
       let res: MigratedConfig;
 
@@ -422,7 +423,7 @@ describe('config/migration', () => {
       });
     });
 
-    it('it migrates unpublishSafe', () => {
+    it('migrates unpublishSafe', () => {
       let config: TestRenovateConfig;
       let res: MigratedConfig;
 
@@ -505,7 +506,7 @@ describe('config/migration', () => {
       });
     });
 
-    it('it migrates packageRules', () => {
+    it('migrates packageRules', () => {
       const config: TestRenovateConfig = {
         packageRules: [
           {
@@ -575,7 +576,7 @@ describe('config/migration', () => {
     });
   });
 
-  it('it migrates nested packageRules', () => {
+  it('migrates nested packageRules', () => {
     const config: TestRenovateConfig = {
       packageRules: [
         {
@@ -605,7 +606,7 @@ describe('config/migration', () => {
     expect(migratedConfig.packageRules).toHaveLength(3);
   });
 
-  it('it migrates presets', () => {
+  it('migrates presets', () => {
     GlobalConfig.set({
       migratePresets: {
         '@org': 'local>org/renovate-config',
@@ -621,7 +622,7 @@ describe('config/migration', () => {
     expect(migratedConfig).toEqual({ extends: ['local>org/renovate-config'] });
   });
 
-  it('it migrates customManagers', () => {
+  it('migrates customManagers', () => {
     const config: RenovateConfig = {
       customManagers: [
         {
@@ -646,7 +647,7 @@ describe('config/migration', () => {
     expect(migratedConfig).toMatchSnapshot();
   });
 
-  it('it migrates pip-compile', () => {
+  it('migrates pip-compile', () => {
     const config: RenovateConfig = {
       'pip-compile': {
         enabled: true,
@@ -658,6 +659,7 @@ describe('config/migration', () => {
           '(^|/)debian_packages/private/third_party/requirements\\.in$',
           '(^|/).*?requirements.*?\\.in$',
         ],
+        managerFilePatterns: ['requirements.in'],
       },
     };
     const { isMigrated, migratedConfig } =
@@ -666,19 +668,20 @@ describe('config/migration', () => {
     expect(migratedConfig).toEqual({
       'pip-compile': {
         enabled: true,
-        fileMatch: [
-          '(^|/)requirements\\.txt$',
-          '(^|/)requirements-fmt\\.txt$',
-          '(^|/)requirements-lint\\.txt$',
-          '.github/workflows/requirements.txt',
-          '(^|/)debian_packages/private/third_party/requirements\\.txt$',
-          '(^|/).*?requirements.*?\\.txt$',
+        managerFilePatterns: [
+          'requirements.txt',
+          '/(^|/)requirements\\.txt$/',
+          '/(^|/)requirements-fmt\\.txt$/',
+          '/(^|/)requirements-lint\\.txt$/',
+          '/.github/workflows/requirements.txt/',
+          '/(^|/)debian_packages/private/third_party/requirements\\.txt$/',
+          '/(^|/).*?requirements.*?\\.txt$/',
         ],
       },
     });
   });
 
-  it('it migrates gradle-lite', () => {
+  it('migrates gradle-lite', () => {
     const config: RenovateConfig = {
       'gradle-lite': {
         enabled: true,
@@ -757,7 +760,7 @@ describe('config/migration', () => {
     });
   });
 
-  it('it migrates dryRun', () => {
+  it('migrates dryRun', () => {
     let config: TestRenovateConfig;
     let res: MigratedConfig;
 
@@ -768,5 +771,14 @@ describe('config/migration', () => {
     config = { dryRun: false };
     res = configMigration.migrateConfig(config);
     expect(res.isMigrated).toBeTrue();
+  });
+
+  it('migrates baseBranches and baseBranch', () => {
+    const config = { baseBranches: ['main', 'dev'] };
+    const res = configMigration.migrateConfig(config);
+    expect(res.isMigrated).toBeTrue();
+    expect(res.migratedConfig).toEqual({
+      baseBranchPatterns: ['main', 'dev'],
+    });
   });
 });

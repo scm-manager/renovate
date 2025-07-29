@@ -3,6 +3,8 @@ import { logger } from '../../../logger';
 import { ExternalHostError } from '../../../types/errors/external-host-error';
 import { cache } from '../../../util/cache/package/decorator';
 import { HttpError } from '../../../util/http';
+import { regEx } from '../../../util/regex';
+import { asTimestamp } from '../../../util/timestamp';
 import { id as semverId } from '../../versioning/semver';
 import { Datasource } from '../datasource';
 import type { GetReleasesConfig, ReleaseResult } from '../types';
@@ -58,7 +60,7 @@ export class HexpmBobDatasource extends Datasource {
       ...HexpmBobDatasource.getPackageDetails(packageType),
     };
     try {
-      const { body } = await this.http.get(url);
+      const { body } = await this.http.getText(url);
       result.releases = body
         .split('\n')
         .map((line) => line.trim())
@@ -69,7 +71,7 @@ export class HexpmBobDatasource extends Datasource {
           return {
             gitRef,
             isStable: HexpmBobDatasource.isStable(version, packageType),
-            releaseTimestamp: buildDate,
+            releaseTimestamp: asTimestamp(buildDate),
             version: HexpmBobDatasource.cleanVersion(version, packageType),
           };
         });
@@ -108,7 +110,7 @@ export class HexpmBobDatasource extends Datasource {
   private static isStable(version: string, packageType: PackageType): boolean {
     switch (packageType) {
       case 'elixir':
-        return version.match(/^v\d+\.\d+\.\d+($|-otp)/) !== null;
+        return regEx(/^v\d+\.\d+\.\d+($|-otp)/).test(version);
       case 'erlang':
         return version.startsWith('OTP-');
     }

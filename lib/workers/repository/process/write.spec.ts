@@ -1,6 +1,4 @@
 import is from '@sindresorhus/is';
-import type { RenovateConfig } from '../../../../test/util';
-import { logger, mocked, partial, scm } from '../../../../test/util';
 import { getConfig } from '../../../config/defaults';
 import { GlobalConfig } from '../../../config/global';
 import { addMeta } from '../../../logger';
@@ -12,34 +10,35 @@ import type {
 } from '../../../util/cache/repository/types';
 import { fingerprint } from '../../../util/fingerprint';
 import type { LongCommitSha } from '../../../util/git/types';
-import { isLimitReached } from '../../global/limits';
+import { counts } from '../../global/limits';
 import type { BranchConfig, BranchUpgradeConfig } from '../../types';
 import * as _branchWorker from '../update/branch';
 import * as _limits from './limits';
 import {
-  canSkipBranchUpdateCheck,
+  compareCacheFingerprint,
   generateCommitFingerprintConfig,
   syncBranchState,
   writeUpdates,
 } from './write';
+import { logger, partial, scm } from '~test/util';
+import type { RenovateConfig } from '~test/util';
 
-jest.mock('../../../util/git');
-jest.mock('../../../util/cache/repository');
+vi.mock('../../../util/cache/repository');
+vi.mock('./limits');
+vi.mock('../update/branch');
 
-const branchWorker = mocked(_branchWorker);
-const limits = mocked(_limits);
-const repoCache = mocked(_repoCache);
-
-branchWorker.processBranch = jest.fn();
-
-limits.getPrsRemaining = jest.fn().mockResolvedValue(99);
-limits.getBranchesRemaining = jest.fn().mockResolvedValue(99);
+const branchWorker = vi.mocked(_branchWorker);
+const limits = vi.mocked(_limits);
+const repoCache = vi.mocked(_repoCache);
 
 let config: RenovateConfig;
 
 beforeEach(() => {
   config = getConfig();
   repoCache.getCache.mockReturnValue({});
+  limits.getConcurrentPrsCount.mockResolvedValue(0);
+  limits.getConcurrentBranchesCount.mockResolvedValue(0);
+  limits.getPrHourlyCount.mockResolvedValue(0);
 });
 
 describe('workers/repository/process/write', () => {
@@ -104,22 +103,35 @@ describe('workers/repository/process/write', () => {
 
     it('increments branch counter', async () => {
       const branchName = 'branchName';
-      const branches: BranchConfig[] = [
-        { baseBranch: 'main', branchName, upgrades: [], manager: 'npm' },
-        { baseBranch: 'dev', branchName, upgrades: [], manager: 'npm' },
-      ];
+      const branches = partial<BranchConfig[]>([
+        {
+          baseBranch: 'main',
+          branchName,
+          upgrades: partial<BranchUpgradeConfig>([{ prConcurrentLimit: 10 }]),
+          manager: 'npm',
+        },
+        {
+          baseBranch: 'dev',
+          branchName,
+          upgrades: partial<BranchUpgradeConfig>([{ prConcurrentLimit: 10 }]),
+          manager: 'npm',
+        },
+      ]);
       repoCache.getCache.mockReturnValueOnce({});
       branchWorker.processBranch.mockResolvedValueOnce({
         branchExists: true,
         result: 'pr-created',
       });
-      scm.branchExists.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-      limits.getBranchesRemaining.mockResolvedValueOnce(1);
-      expect(isLimitReached('Branches')).toBeFalse();
+
+      limits.getConcurrentPrsCount.mockResolvedValue(0);
+      limits.getConcurrentBranchesCount.mockResolvedValue(0);
+      limits.getPrHourlyCount.mockResolvedValue(0);
+
+      scm.branchExists.mockResolvedValueOnce(false).mockResolvedValue(true);
       GlobalConfig.set({ dryRun: 'full' });
-      config.baseBranches = ['main', 'dev'];
+      config.baseBranchPatterns = ['main', 'dev'];
       await writeUpdates(config, branches);
-      expect(isLimitReached('Branches')).toBeTrue();
+      expect(counts.get('Branches')).toBe(1);
       expect(addMeta).toHaveBeenCalledWith({
         baseBranch: 'main',
         branch: branchName,
@@ -168,9 +180,6 @@ describe('workers/repository/process/write', () => {
           upgrades: [
             partial<BranchUpgradeConfig>({
               manager: 'unknown-manager',
-              env: {
-                SOME_VAR: 'SOME_VALUE',
-              },
             }),
           ],
         },
@@ -349,7 +358,9 @@ describe('workers/repository/process/write', () => {
         branchName: 'new/some-branch',
         sha: '111',
       };
-      expect(canSkipBranchUpdateCheck(branchCache, '222')).toBe(false);
+      expect(compareCacheFingerprint(branchCache, '222')).toBe(
+        'no-fingerprint',
+      );
     });
 
     it('returns false when fingerprints are not same', () => {
@@ -359,7 +370,7 @@ describe('workers/repository/process/write', () => {
         sha: '111',
         commitFingerprint: '211',
       };
-      expect(canSkipBranchUpdateCheck(branchCache, '222')).toBe(false);
+      expect(compareCacheFingerprint(branchCache, '222')).toBe('no-match');
     });
 
     it('returns true', () => {
@@ -369,7 +380,7 @@ describe('workers/repository/process/write', () => {
         sha: '111',
         commitFingerprint: '222',
       };
-      expect(canSkipBranchUpdateCheck(branchCache, '222')).toBe(true);
+      expect(compareCacheFingerprint(branchCache, '222')).toBe('matched');
     });
   });
 

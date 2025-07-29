@@ -129,7 +129,7 @@ Forking Renovate needs only `read` level access to the code of any repository it
 If you use Forking Renovate, you'll miss out on these features of the regular Renovate app:
 
 - Automerge
-- The `baseBranches` config option
+- The `baseBranchPatterns` config option
 
 ### Hosting Renovate
 
@@ -205,14 +205,15 @@ Read the platform-specific docs to learn how to setup authentication on your pla
 - [Azure DevOps](../modules/platform/azure/index.md)
 - [Bitbucket Cloud](../modules/platform/bitbucket/index.md)
 - [Bitbucket Server](../modules/platform/bitbucket-server/index.md)
-- [Gitea and Forgejo](../modules/platform/gitea/index.md)
+- [Forgejo](../modules/platform/forgejo/index.md)
+- [Gitea](../modules/platform/gitea/index.md)
 - [github.com and GitHub Enterprise Server](../modules/platform/github/index.md)
 - [GitLab](../modules/platform/gitlab/index.md)
 - [SCM-Manager](../modules/platform/scm-manager/index.md)
 
 ### GitHub.com token for changelogs
 
-If you are running on any platform except github.com, you should also set the environment variable `GITHUB_COM_TOKEN` and put the Personal Access Token for github.com in it.
+If you are running on any platform except github.com, you should also set the environment variable `RENOVATE_GITHUB_COM_TOKEN` and put the Personal Access Token for github.com in it.
 This account can be _any_ account on GitHub, and needs only `read-only` access.
 It's used when fetching changelogs for repositories in order to increase the hourly API limit.
 It's also OK to configure the same as a host rule instead, if you prefer that.

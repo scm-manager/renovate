@@ -1,10 +1,10 @@
-import type { RenovateConfig } from '../../../config/types';
+import type { AllConfig, RenovateConfig } from '../../../config/types';
 import { logger } from '../../../logger';
 import { platform } from '../../../modules/platform';
 import * as repositoryCache from '../../../util/cache/repository';
 import { clearRenovateRefs } from '../../../util/git';
 import { PackageFiles } from '../package-files';
-import { validateReconfigureBranch } from '../reconfigure';
+import { checkReconfigureBranch } from '../reconfigure';
 import { pruneStaleBranches } from './prune';
 import {
   runBranchSummary,
@@ -15,8 +15,9 @@ import {
 export async function finalizeRepo(
   config: RenovateConfig,
   branchList: string[],
+  repoConfig: AllConfig,
 ): Promise<void> {
-  await validateReconfigureBranch(config);
+  await checkReconfigureBranch(config, repoConfig);
   await repositoryCache.saveCache();
   await pruneStaleBranches(config, branchList);
   await ensureIssuesClosing();

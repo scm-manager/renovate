@@ -1,5 +1,6 @@
 import is from '@sindresorhus/is';
 import { logger } from '../../../logger';
+import type { Nullish } from '../../../types';
 import { ExternalHostError } from '../../../types/errors/external-host-error';
 import type { GitlabProject } from '../../../types/platform/gitlab';
 import { GitlabHttp } from '../../../util/http/gitlab';
@@ -14,7 +15,7 @@ async function getDefaultBranchName(
   urlEncodedPkgName: string,
   endpoint: string,
 ): Promise<string> {
-  const res = await gitlabApi.getJson<GitlabProject>(
+  const res = await gitlabApi.getJsonUnchecked<GitlabProject>(
     `${endpoint}projects/${urlEncodedPkgName}`,
   );
   return res.body.default_branch ?? 'master'; // should never happen, but we keep this to ensure the current behavior
@@ -25,7 +26,7 @@ export async function fetchJSONFile(
   fileName: string,
   endpoint: string,
   tag?: string,
-): Promise<Preset> {
+): Promise<Nullish<Preset>> {
   let url = endpoint;
   let ref = '';
   let res: HttpResponse;
@@ -43,12 +44,14 @@ export async function fetchJSONFile(
     }
     url += `projects/${urlEncodedRepo}/repository/files/${urlEncodedPkgName}/raw${ref}`;
     logger.trace({ url }, `Preset URL`);
-    res = await gitlabApi.get(url);
+    res = await gitlabApi.getText(url);
   } catch (err) {
     if (err instanceof ExternalHostError) {
       throw err;
     }
-    logger.debug(`Preset file ${fileName} not found in ${repo}`);
+    logger.debug(
+      `Preset file ${fileName} not found in ${repo}: ${err.message}`,
+    );
     throw new Error(PRESET_DEP_NOT_FOUND);
   }
 
@@ -61,7 +64,7 @@ export function getPresetFromEndpoint(
   presetPath?: string,
   endpoint = Endpoint,
   tag?: string,
-): Promise<Preset | undefined> {
+): Promise<Nullish<Preset>> {
   return fetchPreset({
     repo,
     filePreset: presetName,
@@ -77,6 +80,6 @@ export function getPreset({
   presetPath,
   presetName = 'default',
   tag = undefined,
-}: PresetConfig): Promise<Preset | undefined> {
+}: PresetConfig): Promise<Nullish<Preset>> {
   return getPresetFromEndpoint(repo, presetName, presetPath, Endpoint, tag);
 }

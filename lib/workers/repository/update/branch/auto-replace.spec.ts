@@ -1,18 +1,18 @@
 import { codeBlock } from 'common-tags';
-import { Fixtures } from '../../../../../test/fixtures';
 import { getConfig } from '../../../../config/defaults';
 import { GlobalConfig } from '../../../../config/global';
 import { WORKER_FILE_UPDATE_FAILED } from '../../../../constants/error-messages';
 import { extractPackageFile } from '../../../../modules/manager/html';
 import type { BranchUpgradeConfig } from '../../../types';
 import { doAutoReplace } from './auto-replace';
+import { Fixtures } from '~test/fixtures';
 
 const sampleHtml = Fixtures.get(
   'sample.html',
   `../../../../modules/manager/html`,
 );
 
-jest.mock('../../../../util/fs');
+vi.mock('../../../../util/fs');
 
 describe('workers/repository/update/branch/auto-replace', () => {
   describe('doAutoReplace', () => {
@@ -218,6 +218,7 @@ describe('workers/repository/update/branch/auto-replace', () => {
       upgrade.packageFile = '.gitlab-ci.yml';
       upgrade.autoReplaceStringTemplate =
         "'{{{depName}}}'\nref: {{{newValue}}}";
+      upgrade.datasourceTemplate = 'docker';
       upgrade.matchStringsStrategy = 'combination';
 
       // If the new "name" is not added to the matchStrings, the regex matcher fails to extract from `newContent` as
@@ -237,7 +238,7 @@ describe('workers/repository/update/branch/auto-replace', () => {
       );
     });
 
-    it('fails with oldversion in depname', async () => {
+    it('fails with oldversion in depName', async () => {
       const yml =
         'image: "1111111111.dkr.ecr.us-east-1.amazonaws.com/my-repository:1"\n\n';
       upgrade.manager = 'regex';
@@ -252,6 +253,7 @@ describe('workers/repository/update/branch/auto-replace', () => {
       upgrade.matchStrings = [
         'image:\\s*\\\'?\\"?(?<depName>[^:]+):(?<currentValue>[^\\s\\\'\\"]+)\\\'?\\"?\\s*',
       ];
+      upgrade.datasourceTemplate = 'docker';
       const res = doAutoReplace(upgrade, yml, reuseExistingBranch);
       await expect(res).rejects.toThrow(WORKER_FILE_UPDATE_FAILED);
     });
@@ -316,6 +318,7 @@ describe('workers/repository/update/branch/auto-replace', () => {
       upgrade.matchStrings = [
         'image:\\s*\\\'?\\"?(?<depName>[^:]+):(?<currentValue>[^\\s\\\'\\"]+)\\\'?\\"?\\s*',
       ];
+      upgrade.datasourceTemplate = 'docker';
       const res = await doAutoReplace(upgrade, yml, reuseExistingBranch);
       expect(res).toBe(yml);
     });
@@ -754,6 +757,103 @@ describe('workers/repository/update/branch/auto-replace', () => {
       );
     });
 
+    it('updates with helm value image/repository replacement with digest', async () => {
+      const yml = codeBlock`
+        parser:
+          image:
+              repository: docker.io/securecodebox/parser-nmap
+              tag: 3.14.3@q1w2e3r4t5z6u7i8o9p0
+      `;
+      upgrade.manager = 'helm-values';
+      upgrade.depName = 'docker.io/securecodebox/parser-nmap';
+      upgrade.replaceString = '3.14.3';
+      upgrade.currentValue = '3.14.3';
+      upgrade.currentDigest = 'q1w2e3r4t5z6u7i8o9p0';
+      upgrade.depIndex = 0;
+      upgrade.updateType = 'replacement';
+      upgrade.newName = 'iteratec/juice-balancer';
+      upgrade.newValue = 'v5.1.0';
+      upgrade.newDigest = 'p0o9i8u7z6t5r4e3w2q1';
+      upgrade.packageFile = 'values.yml';
+      const res = await doAutoReplace(upgrade, yml, reuseExistingBranch);
+      expect(res).toBe(
+        yml
+          .replace(upgrade.depName, upgrade.newName)
+          .replace(upgrade.currentValue, upgrade.newValue)
+          .replace(upgrade.currentDigest, upgrade.newDigest),
+      );
+    });
+
+    it('updates with helm value image/repository wrong version', async () => {
+      const yml = codeBlock`
+        parser:
+          test: 3.14.3
+          image:
+              repository: docker.io/securecodebox/parser-nmap
+              tag: 2.14.3
+      `;
+      upgrade.manager = 'helm-values';
+      upgrade.depName = 'docker.io/securecodebox/parser-nmap';
+      upgrade.replaceString = '3.14.3';
+      upgrade.currentValue = '3.14.3';
+      upgrade.depIndex = 0;
+      upgrade.updateType = 'replacement';
+      upgrade.newName = 'iteratec/juice-balancer';
+      upgrade.newValue = 'v5.1.0';
+      upgrade.packageFile = 'values.yml';
+      await expect(
+        doAutoReplace(upgrade, yml, reuseExistingBranch),
+      ).rejects.toThrowError(WORKER_FILE_UPDATE_FAILED);
+    });
+
+    it('updates with helm value image/repository prefix replacement', async () => {
+      const yml = codeBlock`
+        parser:
+          image:
+            repository: example.org/securecodebox/parser-nmap
+            tag: 3.14.3
+      `;
+      upgrade.manager = 'helm-values';
+      upgrade.depName = 'example.org/securecodebox/parser-nmap';
+      upgrade.replaceString = '3.14.3';
+      upgrade.currentValue = '3.14.3';
+      upgrade.depIndex = 0;
+      upgrade.updateType = 'replacement';
+      upgrade.newName = 'docker.example.org/securecodebox/parser-nmap';
+      upgrade.newValue = 'v5.1.0';
+      upgrade.packageFile = 'values.yml';
+      const res = await doAutoReplace(upgrade, yml, reuseExistingBranch);
+      expect(res).toBe(
+        yml
+          .replace(upgrade.depName, upgrade.newName)
+          .replace(upgrade.currentValue, upgrade.newValue),
+      );
+    });
+
+    it('updates with helm value image/repository version prefix replacement', async () => {
+      const yml = codeBlock`
+        parser:
+          image:
+            tag: 3.14.3
+            repository: docker.io/securecodebox/parser-nmap
+      `;
+      upgrade.manager = 'helm-values';
+      upgrade.depName = 'docker.io/securecodebox/parser-nmap';
+      upgrade.replaceString = '3.14.3';
+      upgrade.currentValue = '3.14.3';
+      upgrade.depIndex = 0;
+      upgrade.updateType = 'replacement';
+      upgrade.newName = 'iteratec/juice-balancer';
+      upgrade.newValue = 'v3.14.3';
+      upgrade.packageFile = 'values.yml';
+      const res = await doAutoReplace(upgrade, yml, reuseExistingBranch);
+      expect(res).toBe(
+        yml
+          .replace(upgrade.depName, upgrade.newName)
+          .replace(upgrade.currentValue, upgrade.newValue),
+      );
+    });
+
     it('updates with jenkins plugin replacement', async () => {
       const txt = 'script-security:1175\n';
       upgrade.manager = 'jenkins';
@@ -1080,6 +1180,32 @@ describe('workers/repository/update/branch/auto-replace', () => {
       );
     });
 
+    it('updates with multiple same digest replacement without replaceString', async () => {
+      const dockerfile = codeBlock`
+        FROM notUbuntu:18.04@q1w2e3r4t5z6u7i8o9p0
+        FROM alsoNotUbuntu:18.05@q1w2e3r4t5z6u7i8o9p0
+        FROM ubuntu:18.04@q1w2e3r4t5z6u7i8o9p0
+      `;
+      upgrade.manager = 'dockerfile';
+      upgrade.depName = 'ubuntu';
+      upgrade.currentValue = '18.04';
+      upgrade.currentDigest = 'q1w2e3r4t5z6u7i8o9p0';
+      upgrade.depIndex = 2;
+      upgrade.updateType = 'replacement';
+      upgrade.newName = 'alpine';
+      upgrade.newValue = '3.16';
+      upgrade.newDigest = 'p0o9i8u7z6t5r4e3w2q1';
+      upgrade.packageFile = 'Dockerfile';
+      const res = await doAutoReplace(upgrade, dockerfile, reuseExistingBranch);
+      expect(res).toBe(
+        codeBlock`
+          FROM notUbuntu:18.04@q1w2e3r4t5z6u7i8o9p0
+          FROM alsoNotUbuntu:18.05@q1w2e3r4t5z6u7i8o9p0
+          FROM alpine:3.16@p0o9i8u7z6t5r4e3w2q1
+        `,
+      );
+    });
+
     it('docker: updates with pinDigest enabled but no currentDigest value', async () => {
       const dockerfile = codeBlock`
         FROM ubuntu:18.04
@@ -1190,6 +1316,7 @@ describe('workers/repository/update/branch/auto-replace', () => {
       upgrade.matchStrings = [
         'image:\\s*?\\\'?\\"?(?<depName>[^:\\\'\\"]+):(?<currentValue>[^@\\\'\\"]+)@?(?<currentDigest>[^\\s\\\'\\"]+)?\\"?\\\'?\\s*',
       ];
+      upgrade.datasourceTemplate = 'docker';
       const res = await doAutoReplace(upgrade, yml, reuseExistingBranch);
       expect(res).toBe('image: "some.other.url.com/some-new-repo:3.16"');
     });
@@ -1213,6 +1340,7 @@ describe('workers/repository/update/branch/auto-replace', () => {
       upgrade.matchStrings = [
         'image:\\s*[\\\'\\"]?(?<depName>[^:]+):(?<currentValue>[^@]+)?@?(?<currentDigest>[^\\s\\\'\\"]+)?[\\\'\\"]?\\s*',
       ];
+      upgrade.datasourceTemplate = 'docker';
       const res = await doAutoReplace(upgrade, yml, reuseExistingBranch);
       expect(res).toBe(
         'image: "some.other.url.com/some-new-repo:3.16@sha256:p0o9i8u7z6t5r4e3w2q1"',
@@ -1366,6 +1494,44 @@ describe('workers/repository/update/branch/auto-replace', () => {
               runs-on: ubuntu-latest
               steps:
                 - uses: some-other-action/checkout@1cf887 # tag=v2.0.0
+        `,
+      );
+    });
+
+    it('github-actions: failes to update currentDigestShort', async () => {
+      const githubAction = codeBlock`
+        jobs:
+          build:
+            runs-on: ubuntu-latest
+            steps:
+              - uses: actions/checkout@2485f4 # tag=v1.0.0
+      `;
+      upgrade.manager = 'github-actions';
+      upgrade.updateType = 'replacement';
+      upgrade.pinDigests = true;
+      upgrade.autoReplaceStringTemplate =
+        '{{depName}}@{{#if newDigest}}{{newDigest}}{{#if newValue}} # {{newValue}}{{/if}}{{/if}}{{#unless newDigest}}{{newValue}}{{/unless}}';
+      upgrade.depName = 'actions/checkout';
+      upgrade.currentValue = 'v1.0.0';
+      upgrade.currentDigestShort = 'wrong';
+      upgrade.depIndex = 0;
+      upgrade.replaceString = 'actions/checkout@2485f4 # tag=v1.0.0';
+      upgrade.newName = 'some-other-action/checkout';
+      upgrade.newValue = 'v2.0.0';
+      upgrade.newDigest = '1cf887';
+      upgrade.packageFile = 'workflow.yml';
+      const res = await doAutoReplace(
+        upgrade,
+        githubAction,
+        reuseExistingBranch,
+      );
+      expect(res).toBe(
+        codeBlock`
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: some-other-action/checkout@2485f4 # tag=v2.0.0
         `,
       );
     });

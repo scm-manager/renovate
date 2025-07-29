@@ -80,6 +80,7 @@ export const presets: Record<string, Preset> = {
       'ts-auto-mock',
       'ts-jest',
       'vitest',
+      '@jest/**',
       '@testing-library/**',
       '@types/testing-library__**',
       '@vitest/**',
@@ -135,7 +136,8 @@ export const presets: Record<string, Preset> = {
   },
   react: {
     description: 'All React packages.',
-    matchPackageNames: ['@types/react', 'react**'],
+    matchDatasources: ['npm'],
+    matchPackageNames: ['@types/react**', 'react**'],
   },
   stylelint: {
     description: 'All Stylelint packages.',

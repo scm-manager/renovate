@@ -160,8 +160,8 @@ export function getProjectAndRepo(str: string): {
       repo: strSplit[1],
     };
   }
-  const msg = `${str} can be only structured this way : 'repository' or 'projectName/repository'!`;
-  logger.error(msg);
+  const msg = `Azure repository can be only structured this way : 'repository' or 'projectName/repository'!`;
+  logger.warn({ repository: str }, msg);
   throw new Error(msg);
 }
 
@@ -195,6 +195,8 @@ export function mapMergeStrategy(
       return GitPullRequestMergeStrategy.Rebase;
     case 'merge-commit':
       return GitPullRequestMergeStrategy.NoFastForward;
+    case 'rebase-merge':
+      return GitPullRequestMergeStrategy.RebaseMerge;
     case 'squash':
       return GitPullRequestMergeStrategy.Squash;
     default:

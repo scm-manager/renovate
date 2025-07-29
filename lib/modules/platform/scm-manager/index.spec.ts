@@ -1,15 +1,16 @@
 import * as httpMock from '../../../../test/http-mock';
-import { git, mocked } from '../../../../test/util';
 import * as hostRules from '../../../util/host-rules';
 import type { Pr } from '../types';
-import * as _util from '../util';
+import * as util from '../util';
 import { mapPrFromScmToRenovate } from './mapper';
-import type { PrFilterByState, PullRequest, Repo, User } from './types';
+import type { PullRequest, Repo, User } from './schema';
+import type { PrFilterByState } from './types';
 import {
   addAssignees,
   addReviewers,
   createPr,
   deleteLabel,
+  ensureComment,
   ensureCommentRemoval,
   ensureIssue,
   ensureIssueClosing,
@@ -34,10 +35,10 @@ import {
   setBranchStatus,
   updatePr,
 } from './index';
+import { git } from '~test/util';
 
-jest.mock('../../../util/git');
-jest.mock('../util');
-const util: jest.Mocked<typeof _util> = mocked(_util);
+vi.mock('../util');
+vi.mock('../../../util/git');
 
 const endpoint = 'https://localhost:8080/scm/api/v2';
 const token = 'TEST_TOKEN';
@@ -89,11 +90,11 @@ const pullRequest: PullRequest = {
   },
 };
 
-const renovatePr: Pr = mapPrFromScmToRenovate(pullRequest);
+const renovatePr = mapPrFromScmToRenovate(pullRequest);
 
 describe('modules/platform/scm-manager/index', () => {
   beforeEach(() => {
-    jest.resetAllMocks();
+    vi.resetAllMocks();
     hostRules.add({ token, username: user.name });
     invalidatePrCache();
   });
@@ -143,7 +144,7 @@ describe('modules/platform/scm-manager/index', () => {
         .get(`/config/git/${repository}/default-branch`)
         .reply(200, { defaultBranch: expectedDefaultBranch });
 
-      util.repoFingerprint.mockReturnValueOnce(expectedFingerprint);
+      vi.mocked(util.repoFingerprint).mockReturnValueOnce(expectedFingerprint);
 
       expect(
         await initRepo({ repository: `${repo.namespace}/${repo.name}` }),
@@ -271,31 +272,32 @@ describe('modules/platform/scm-manager/index', () => {
       ).toEqual(renovatePr);
     });
 
-    it.each([
-      [[], pullRequest.source, pullRequest.title, 'all', null],
-      [[pullRequest], 'invalid branchName', pullRequest.title, 'all', null],
-      [[pullRequest], pullRequest.source, 'invalid title', 'all', null],
-      [[pullRequest], pullRequest.source, null, 'all', renovatePr],
-      [[pullRequest], pullRequest.source, undefined, 'all', renovatePr],
-      [[pullRequest], pullRequest.source, pullRequest.title, 'all', renovatePr],
-      [
-        [pullRequest],
-        pullRequest.source,
-        pullRequest.title,
-        'open',
-        renovatePr,
-      ],
-      [[pullRequest], pullRequest.source, pullRequest.title, '!open', null],
-      [[pullRequest], pullRequest.source, pullRequest.title, 'closed', null],
-    ])(
-      'search within %p for %p, %p, %p with result %p',
-      async (
-        availablePullRequest: PullRequest[],
-        branchName: string,
-        prTitle: string | null | undefined,
-        state: string,
-        result: Pr | null,
-      ) => {
+    it.each`
+      availablePullRequest | branchName              | prTitle              | state       | result
+      ${[]}                | ${pullRequest.source}   | ${pullRequest.title} | ${'all'}    | ${null}
+      ${[pullRequest]}     | ${'invalid branchName'} | ${pullRequest.title} | ${'all'}    | ${null}
+      ${[pullRequest]}     | ${pullRequest.source}   | ${'invalid title'}   | ${'all'}    | ${null}
+      ${[pullRequest]}     | ${pullRequest.source}   | ${null}              | ${'all'}    | ${renovatePr}
+      ${[pullRequest]}     | ${pullRequest.source}   | ${undefined}         | ${'all'}    | ${renovatePr}
+      ${[pullRequest]}     | ${pullRequest.source}   | ${pullRequest.title} | ${'all'}    | ${renovatePr}
+      ${[pullRequest]}     | ${pullRequest.source}   | ${pullRequest.title} | ${'open'}   | ${renovatePr}
+      ${[pullRequest]}     | ${pullRequest.source}   | ${pullRequest.title} | ${'!open'}  | ${null}
+      ${[pullRequest]}     | ${pullRequest.source}   | ${pullRequest.title} | ${'closed'} | ${null}
+    `(
+      'search within available pull requests for branch name "$branchName", pr title "$prTitle" and state "$state" with result $result',
+      async ({
+        availablePullRequest,
+        branchName,
+        prTitle,
+        state,
+        result,
+      }: {
+        availablePullRequest: PullRequest[];
+        branchName: string;
+        prTitle: string | undefined | null;
+        state: string;
+        result: Pr | null;
+      }) => {
         httpMock
           .scope(endpoint)
           .get(
@@ -321,17 +323,22 @@ describe('modules/platform/scm-manager/index', () => {
   });
 
   describe(getBranchPr, () => {
-    it.each([
-      [[], pullRequest.source, null],
-      [[pullRequest], 'invalid branchName', null],
-      [[pullRequest], pullRequest.source, renovatePr],
-    ])(
-      'search within %p for %p with result %p',
-      async (
-        availablePullRequest: PullRequest[],
-        branchName: string,
-        result: Pr | null,
-      ) => {
+    it.each`
+      availablePullRequest | branchName              | result
+      ${[]}                | ${pullRequest.source}   | ${null}
+      ${[pullRequest]}     | ${'invalid branchName'} | ${null}
+      ${[pullRequest]}     | ${pullRequest.source}   | ${renovatePr}
+    `(
+      'search within available pull requests for branch name "$branchName" with result $result',
+      async ({
+        availablePullRequest,
+        branchName,
+        result,
+      }: {
+        availablePullRequest: PullRequest[];
+        branchName: string;
+        result: Pr | null;
+      }) => {
         httpMock
           .scope(endpoint)
           .get(
@@ -414,17 +421,22 @@ describe('modules/platform/scm-manager/index', () => {
   });
 
   describe(createPr, () => {
-    it.each([
-      [undefined, 'OPEN', false],
-      [false, 'OPEN', false],
-      [true, 'DRAFT', true],
-    ])(
-      'it should create the PR with isDraft %p and state %p',
-      async (
-        draftPR: boolean | undefined,
-        expectedState: string,
-        expectedIsDraft: boolean,
-      ) => {
+    it.each`
+      draftPr      | expectedState | expectedIsDraft
+      ${undefined} | ${'OPEN'}     | ${false}
+      ${false}     | ${'OPEN'}     | ${false}
+      ${true}      | ${'DRAFT'}    | ${true}
+    `(
+      'should create PR with $draftPR and state $expectedState',
+      async ({
+        draftPr,
+        expectedState,
+        expectedIsDraft,
+      }: {
+        draftPr: boolean | undefined;
+        expectedState: string;
+        expectedIsDraft: boolean;
+      }) => {
         httpMock
           .scope(endpoint)
           .post(`/pull-requests/${repo.namespace}/${repo.name}`)
@@ -442,7 +454,7 @@ describe('modules/platform/scm-manager/index', () => {
             title: 'PR Title',
             description: 'PR Body',
             creationDate: '2023-01-01T13:37:00.000Z',
-            status: draftPR ? 'DRAFT' : 'OPEN',
+            status: draftPr ? 'DRAFT' : 'OPEN',
             labels: [],
             tasks: { todo: 0, done: 0 },
             _links: {},
@@ -460,7 +472,7 @@ describe('modules/platform/scm-manager/index', () => {
             targetBranch: 'develop',
             prTitle: 'PR Title',
             prBody: 'PR Body',
-            draftPR,
+            draftPR: draftPr,
           }),
         ).toEqual({
           sourceBranch: 'feature/test',
@@ -479,19 +491,21 @@ describe('modules/platform/scm-manager/index', () => {
   });
 
   describe(updatePr, () => {
-    it.each([
-      ['open', 'OPEN', 'prBody', 'prBody'],
-      ['closed', 'REJECTED', 'prBody', 'prBody'],
-      [undefined, undefined, 'prBody', 'prBody'],
-      ['open', 'OPEN', undefined, undefined],
-    ])(
-      'it should update the PR with state %p and prBody %p',
-      async (
-        actualState: string | undefined,
-        expectedState: string | undefined,
-        actualPrBody: string | undefined,
-        expectedPrBody: string | undefined,
-      ) => {
+    it.each`
+      state        | body
+      ${'open'}    | ${'prBody'}
+      ${'closed'}  | ${'prBody'}
+      ${undefined} | ${'prBody'}
+      ${'open'}    | ${undefined}
+    `(
+      'should update PR with state $state and bdoy $body',
+      async ({
+        state,
+        body,
+      }: {
+        state: string | undefined;
+        body: string | undefined;
+      }) => {
         httpMock
           .scope(endpoint)
           .get(
@@ -504,15 +518,15 @@ describe('modules/platform/scm-manager/index', () => {
           .put(`/pull-requests/${repo.namespace}/${repo.name}/1`)
           .reply(204);
 
-        await updatePr({
-          number: 1,
-          prTitle: 'PR Title',
-          prBody: actualPrBody,
-          state: actualState as 'open' | 'closed' | undefined,
-          targetBranch: 'Target/Branch',
-        });
-
-        expect(httpMock.allUsed()).toBeTrue();
+        await expect(
+          updatePr({
+            number: 1,
+            prTitle: 'PR Title',
+            prBody: body,
+            state: state as 'open' | 'closed' | undefined,
+            targetBranch: 'Target/Branch',
+          }),
+        ).resolves.not.toThrow();
       },
     );
   });
@@ -608,6 +622,18 @@ describe('modules/platform/scm-manager/index', () => {
     });
   });
 
+  describe(ensureComment, () => {
+    it('should Not implemented', async () => {
+      expect(
+        await ensureComment({
+          number: 1,
+          topic: 'comment',
+          content: 'content',
+        }),
+      ).toBeFalse();
+    });
+  });
+
   describe(massageMarkdown, () => {
     it('should adjust smart link for Pull Requests', () => {
       const result = massageMarkdown('[PR](../pull/1)');
@@ -632,7 +658,7 @@ describe('modules/platform/scm-manager/index', () => {
   describe(getJsonFile, () => {
     it('should Not implemented and return undefined', async () => {
       const result = await getJsonFile('package.json');
-      expect(result).toBeUndefined();
+      expect(result).toBeNull();
     });
   });
 

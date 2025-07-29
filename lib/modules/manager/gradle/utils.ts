@@ -1,5 +1,6 @@
 import upath from 'upath';
 import { regEx } from '../../../util/regex';
+import { api as gradleVersioning } from '../../versioning/gradle';
 import type { PackageDependency } from '../types';
 import type {
   GradleManagerData,
@@ -11,10 +12,9 @@ const artifactRegex = regEx(
   '^[a-zA-Z][-_a-zA-Z0-9]*(?:\\.[a-zA-Z0-9][-_a-zA-Z0-9]*?)*$',
 );
 
-const versionLikeRegex = regEx('^(?<version>[-_.\\[\\](),a-zA-Z0-9+]+)');
+const versionLikeRegex = regEx('^(?<version>[-_.\\[\\](),a-zA-Z0-9+ ]+)');
 
-// Extracts version-like and range-like strings
-// from the beginning of input
+// Extracts version-like and range-like strings from the beginning of input
 export function versionLikeSubstring(
   input: string | null | undefined,
 ): string | null {
@@ -23,8 +23,12 @@ export function versionLikeSubstring(
   }
 
   const match = versionLikeRegex.exec(input);
-  const version = match?.groups?.version;
+  const version = match?.groups?.version?.trim();
   if (!version || !regEx(/\d/).test(version)) {
+    return null;
+  }
+
+  if (!gradleVersioning.isValid(version)) {
     return null;
   }
 
@@ -32,40 +36,26 @@ export function versionLikeSubstring(
 }
 
 export function isDependencyString(input: string): boolean {
-  const split = input?.split(':');
-  if (split?.length !== 3 && split?.length !== 4) {
-    return false;
-  }
-  // eslint-disable-next-line prefer-const
-  let [tempGroupId, tempArtifactId, tempVersionPart, optionalClassifier] =
-    split;
-
-  if (optionalClassifier && !artifactRegex.test(optionalClassifier)) {
+  const [depNotation, ...extra] = input.split('@');
+  if (extra.length > 1) {
     return false;
   }
 
-  if (
-    tempVersionPart !== versionLikeSubstring(tempVersionPart) &&
-    tempVersionPart.includes('@')
-  ) {
-    const versionSplit = tempVersionPart?.split('@');
-    if (versionSplit?.length !== 2) {
-      return false;
-    }
-    [tempVersionPart] = versionSplit;
+  const parts = depNotation.split(':');
+  if (parts.length !== 3 && parts.length !== 4) {
+    return false;
   }
-  const [groupId, artifactId, versionPart] = [
-    tempGroupId,
-    tempArtifactId,
-    tempVersionPart,
-  ];
+
+  const [groupId, artifactId, version, classifier] = parts;
+
   return !!(
     groupId &&
     artifactId &&
-    versionPart &&
+    version &&
     artifactRegex.test(groupId) &&
     artifactRegex.test(artifactId) &&
-    versionPart === versionLikeSubstring(versionPart)
+    (!classifier || artifactRegex.test(classifier)) &&
+    version === versionLikeSubstring(version)
   );
 }
 
@@ -75,18 +65,14 @@ export function parseDependencyString(
   if (!isDependencyString(input)) {
     return null;
   }
-  const [groupId, artifactId, FullValue] = input.split(':');
-  if (FullValue === versionLikeSubstring(FullValue)) {
-    return {
-      depName: `${groupId}:${artifactId}`,
-      currentValue: FullValue,
-    };
-  }
-  const [currentValue, dataType] = FullValue.split('@');
+
+  const [depNotation, dataType] = input.split('@');
+  const [groupId, artifactId, currentValue] = depNotation.split(':');
+
   return {
     depName: `${groupId}:${artifactId}`,
     currentValue,
-    dataType,
+    ...(dataType && { dataType }),
   };
 }
 

@@ -5,6 +5,7 @@ import { logger } from '../../../logger';
 import type { Decorator } from '../../decorator';
 import { decorate } from '../../decorator';
 import { acquireLock } from '../../mutex';
+import { resolveTtlValues } from './ttl';
 import type { DecoratorCachedRecord, PackageCacheNamespace } from './types';
 import * as packageCache from '.';
 
@@ -64,14 +65,14 @@ export function cache<T>({
     let finalNamespace: PackageCacheNamespace | undefined;
     if (is.string(namespace)) {
       finalNamespace = namespace;
-    } else if (is.function_(namespace)) {
+    } else if (is.function(namespace)) {
       finalNamespace = namespace.apply(instance, args);
     }
 
     let finalKey: string | undefined;
     if (is.string(key)) {
       finalKey = key;
-    } else if (is.function_(key)) {
+    } else if (is.function(key)) {
       finalKey = key.apply(instance, args);
     }
 
@@ -91,17 +92,13 @@ export function cache<T>({
         finalKey,
       );
 
-      const ttlOverride = getTtlOverride(finalNamespace);
-      const softTtl = ttlOverride ?? ttlMinutes;
-
-      const cacheHardTtlMinutes = GlobalConfig.get(
-        'cacheHardTtlMinutes',
-        7 * 24 * 60,
-      );
-      let hardTtl = softTtl;
-      if (methodName === 'getReleases' || methodName === 'getDigest') {
-        hardTtl = Math.max(softTtl, cacheHardTtlMinutes);
-      }
+      const ttlValues = resolveTtlValues(finalNamespace, ttlMinutes);
+      const softTtl = ttlValues.softTtlMinutes;
+      const hardTtl =
+        methodName === 'getReleases' || methodName === 'getDigest'
+          ? ttlValues.hardTtlMinutes
+          : // Skip two-tier TTL for any intermediate data fetching
+            softTtl;
 
       let oldData: unknown;
       if (oldRecord) {
@@ -122,7 +119,7 @@ export function cache<T>({
       let newData: unknown;
       if (oldData) {
         try {
-          newData = (await callback()) as T | undefined;
+          newData = await callback();
         } catch (err) {
           logger.debug(
             { err },
@@ -131,7 +128,7 @@ export function cache<T>({
           return oldData;
         }
       } else {
-        newData = (await callback()) as T | undefined;
+        newData = await callback();
       }
 
       if (!is.undefined(newData)) {
@@ -139,7 +136,12 @@ export function cache<T>({
           cachedAt: DateTime.local().toISO(),
           value: newData,
         };
-        await packageCache.set(finalNamespace, finalKey, newRecord, hardTtl);
+        await packageCache.setWithRawTtl(
+          finalNamespace,
+          finalKey,
+          newRecord,
+          hardTtl,
+        );
       }
 
       return newData;
@@ -147,12 +149,4 @@ export function cache<T>({
       releaseLock();
     }
   });
-}
-
-export function getTtlOverride(namespace: string): number | undefined {
-  const ttl: unknown = GlobalConfig.get('cacheTtlOverride', {})[namespace];
-  if (is.number(ttl)) {
-    return ttl;
-  }
-  return undefined;
 }

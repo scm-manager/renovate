@@ -12,8 +12,7 @@ Shareable config presets must use the JSON or JSON5 formats, other formats are n
 
 <!-- prettier-ignore -->
 !!! tip
-    Describe what your preset does in the `"description"` field.
-    This way your configuration is self-documenting.
+    Describe what your preset does in the `"description"` field or add comments as Renovate supports `JSONC` syntax within its preset files.
 
 ## Extending from a preset
 
@@ -80,6 +79,18 @@ If you wish to have an alternative file name, you need to specify it (e.g. `gith
 | Gitea with preset name with a tag          | `gitea>abc/foo:xyz#1.2.3`       | `xyz`     | `https://gitea.com/abc/foo` | `xyz.json`      | `1.2.3`        |
 | Gitea with preset name and path with a tag | `gitea>abc/foo//path/xyz#1.2.3` | `xyz`     | `https://gitea.com/abc/foo` | `path/xyz.json` | `1.2.3`        |
 | Gitea with subpreset name and tag          | `gitea>abc/foo:xyz/sub#1.2.3`   | `sub`     | `https://gitea.com/abc/foo` | `xyz.json`      | `1.2.3`        |
+
+### Forgejo
+
+| name                                         | example use                       | preset    | resolves as                    | filename        | Git tag        |
+| -------------------------------------------- | --------------------------------- | --------- | ------------------------------ | --------------- | -------------- |
+| Forgejo default                              | `forgejo>abc/foo`                 | `default` | `https://codeberg.org/abc/foo` | `default.json`  | Default branch |
+| Forgejo with preset name                     | `forgejo>abc/foo:xyz`             | `xyz`     | `https://codeberg.org/abc/foo` | `xyz.json`      | Default branch |
+| Forgejo with preset name (JSON5)             | `forgejo>abc/foo:xyz.json5`       | `xyz`     | `https://codeberg.org/abc/foo` | `xyz.json5`     | Default branch |
+| Forgejo default with a tag                   | `forgejo>abc/foo#1.2.3`           | `default` | `https://codeberg.org/abc/foo` | `default.json`  | `1.2.3`        |
+| Forgejo with preset name with a tag          | `forgejo>abc/foo:xyz#1.2.3`       | `xyz`     | `https://codeberg.org/abc/foo` | `xyz.json`      | `1.2.3`        |
+| Forgejo with preset name and path with a tag | `forgejo>abc/foo//path/xyz#1.2.3` | `xyz`     | `https://codeberg.org/abc/foo` | `path/xyz.json` | `1.2.3`        |
+| Forgejo with subpreset name and tag          | `forgejo>abc/foo:xyz/sub#1.2.3`   | `sub`     | `https://codeberg.org/abc/foo` | `xyz.json`      | `1.2.3`        |
 
 ### Self-hosted Git
 
@@ -170,13 +181,17 @@ Parameters must be strings, non-quoted, and separated by commas if there are mor
 If you find that you are repeating config a lot, you might consider publishing one of these types of parameterized presets yourself.
 Or if you think your preset would be valuable for others, please contribute a PR to the Renovate repository, see [Contributing to presets](#contributing-to-presets).
 
+Also, the entire parameter string is available as `{{args}}`.
+It includes everything between parentheses, verbatim, without the parentheses themselves.
+If you want to include a comma in the parameter value, you need to use `{{args}}` instead of `{{arg0}}`.
+
 ## GitHub-hosted Presets
 
 To host your preset config on GitHub:
 
 - Create a new repository. Normally you'd call it `renovate-config` but it can be named anything
 - Add configuration files to this new repo for any presets you want to share. For the default preset, `default.json` will be checked. For named presets, `<preset-name>.json` will be loaded. For example, loading preset `library` would load `library.json`. No other files are necessary.
-- In other repos, reference it in an extends array like "github>owner/name", for example:
+- In other repos, reference it in an extends array like `"github>owner/name"`, for example:
 
   ```json
   {
@@ -195,7 +210,7 @@ To host your preset config on GitLab:
 
 - Create a new repository on GitLab. Normally you'd call it `renovate-config` but it can be named anything
 - Add a `default.json` to this new repo containing the preset config. No other files are necessary
-- In other repos, reference it in an extends array like "gitlab>owner/name", e.g. "gitlab>rarkins/renovate-config"
+- In other repos, reference it in an extends array like `"gitlab>owner/name"`, e.g. `"gitlab>rarkins/renovate-config"`
 
 ## Gitea-hosted Presets
 
@@ -204,6 +219,14 @@ To host your preset config on Gitea:
 - Create a new repository on Gitea. Normally you'd call it `renovate-config` but you can use any name you want
 - Add a `default.json` to this new repository containing the preset config. No other files are necessary
 - In other repositories, reference it in an extends array like `"gitea>owner/name"`, e.g. `"gitea>rarkins/renovate-config"`
+
+## Forgejo-hosted Presets
+
+To host your preset config on Forgejo:
+
+- Create a new repository on Forgejo. Normally you'd call it `renovate-config` but you can use any name you want
+- Add a `default.json` to this new repository containing the preset config. No other files are necessary
+- In other repositories, reference it in an extends array like `"forgejo>owner/name"`, e.g. `"forgejo>rarkins/renovate-config"`
 
 ## Local presets
 

@@ -1,3 +1,4 @@
+import type { MockInstance } from 'vitest';
 import type { RequiredConfig } from '../../../../config/types';
 import { logger } from '../../../../logger';
 import * as env from './env';
@@ -86,12 +87,13 @@ describe('workers/global/config/parse/env', () => {
     });
 
     test.each`
-      envArg                                   | config
-      ${{ RENOVATE_RECREATE_CLOSED: 'true' }}  | ${{ recreateWhen: 'always' }}
-      ${{ RENOVATE_RECREATE_CLOSED: 'false' }} | ${{ recreateWhen: 'auto' }}
-      ${{ RENOVATE_RECREATE_WHEN: 'auto' }}    | ${{ recreateWhen: 'auto' }}
-      ${{ RENOVATE_RECREATE_WHEN: 'always' }}  | ${{ recreateWhen: 'always' }}
-      ${{ RENOVATE_RECREATE_WHEN: 'never' }}   | ${{ recreateWhen: 'never' }}
+      envArg                                           | config
+      ${{ RENOVATE_RECREATE_CLOSED: 'true' }}          | ${{ recreateWhen: 'always' }}
+      ${{ RENOVATE_RECREATE_CLOSED: 'false' }}         | ${{ recreateWhen: 'auto' }}
+      ${{ RENOVATE_RECREATE_WHEN: 'auto' }}            | ${{ recreateWhen: 'auto' }}
+      ${{ RENOVATE_RECREATE_WHEN: 'always' }}          | ${{ recreateWhen: 'always' }}
+      ${{ RENOVATE_RECREATE_WHEN: 'never' }}           | ${{ recreateWhen: 'never' }}
+      ${{ RENOVATE_BASE_BRANCHES: '["main", "dev"]' }} | ${{ baseBranchPatterns: ['main', 'dev'] }}
     `('"$envArg" -> $config', async ({ envArg, config }) => {
       expect(await env.getConfig(envArg)).toMatchObject(config);
     });
@@ -164,6 +166,41 @@ describe('workers/global/config/parse/env', () => {
     it('supports GitHub fine-grained PATs', async () => {
       const envParam: NodeJS.ProcessEnv = {
         GITHUB_COM_TOKEN: 'github_pat_XXXXXX',
+        RENOVATE_TOKEN: 'a github.com token',
+      };
+      expect(await env.getConfig(envParam)).toEqual({
+        token: 'a github.com token',
+        hostRules: [
+          {
+            hostType: 'github',
+            matchHost: 'github.com',
+            token: 'github_pat_XXXXXX',
+          },
+        ],
+      });
+    });
+
+    it('supports RENOVATE_ prefixed github com token', async () => {
+      const envParam: NodeJS.ProcessEnv = {
+        RENOVATE_GITHUB_COM_TOKEN: 'github_pat_XXXXXX',
+        RENOVATE_TOKEN: 'a github.com token',
+      };
+      expect(await env.getConfig(envParam)).toEqual({
+        token: 'a github.com token',
+        hostRules: [
+          {
+            hostType: 'github',
+            matchHost: 'github.com',
+            token: 'github_pat_XXXXXX',
+          },
+        ],
+      });
+    });
+
+    it('GITHUB_COM_TOKEN takes precedence over RENOVATE_GITHUB_COM_TOKEN', async () => {
+      const envParam: NodeJS.ProcessEnv = {
+        GITHUB_COM_TOKEN: 'github_pat_XXXXXX',
+        RENOVATE_GITHUB_COM_TOKEN: 'github_pat_YYYYYY',
         RENOVATE_TOKEN: 'a github.com token',
       };
       expect(await env.getConfig(envParam)).toEqual({
@@ -292,12 +329,12 @@ describe('workers/global/config/parse/env', () => {
     });
 
     describe('RENOVATE_CONFIG tests', () => {
-      let processExit: jest.SpyInstance<never, [code?: number]>;
+      let processExit: MockInstance<(code?: number | string | null) => never>;
 
       beforeAll(() => {
-        processExit = jest
+        processExit = vi
           .spyOn(process, 'exit')
-          .mockImplementation((async () => {}) as never);
+          .mockImplementation((() => void 0) as never);
       });
 
       afterAll(() => {
@@ -306,7 +343,11 @@ describe('workers/global/config/parse/env', () => {
 
       it('crashes', async () => {
         const envParam: NodeJS.ProcessEnv = { RENOVATE_CONFIG: '!@#' };
-        await env.getConfig(envParam);
+        processExit.mockImplementationOnce(() => {
+          throw new Error('terminate function to simulate process.exit call');
+        });
+
+        await expect(env.getConfig(envParam)).toReject();
         expect(processExit).toHaveBeenCalledWith(1);
       });
 

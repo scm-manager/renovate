@@ -1,6 +1,5 @@
+import { GoogleAuth as _googleAuth } from 'google-auth-library';
 import { join } from 'upath';
-import { mockExecAll } from '../../../../../test/exec-util';
-import { fs, hostRules, mockedFunction } from '../../../../../test/util';
 import { GlobalConfig } from '../../../../config/global';
 import type { RepoGlobalConfig } from '../../../../config/types';
 import { getPkgReleases as _getPkgReleases } from '../../../datasource';
@@ -12,11 +11,15 @@ import { PypiDatasource } from '../../../datasource/pypi';
 import type { UpdateArtifactsConfig } from '../../types';
 import { depTypes } from '../utils';
 import { UvProcessor } from './uv';
+import { mockExecAll } from '~test/exec-util';
+import { fs, hostRules } from '~test/util';
 
-jest.mock('../../../../util/fs');
-jest.mock('../../../datasource');
+vi.mock('google-auth-library');
+vi.mock('../../../../util/fs');
+vi.mock('../../../datasource');
 
-const getPkgReleases = mockedFunction(_getPkgReleases);
+const googleAuth = vi.mocked(_googleAuth);
+const getPkgReleases = vi.mocked(_getPkgReleases);
 
 const config: UpdateArtifactsConfig = {};
 const adminConfig: RepoGlobalConfig = {
@@ -142,6 +145,229 @@ describe('modules/manager/pep621/processors/uv', () => {
     ]);
   });
 
+  it('pinned to non-default index', () => {
+    const pyproject = {
+      tool: {
+        uv: {
+          sources: {
+            dep1: { index: 'foo' },
+            dep2: { index: 'bar' },
+            dep3: { non_existent_future_source: {} } as any,
+          },
+          index: [
+            {
+              name: 'foo',
+              url: 'https://foo.com/simple',
+              default: false,
+              explicit: true,
+            },
+            {
+              name: 'bar',
+              url: 'https://bar.com/simple',
+              default: false,
+              explicit: true,
+            },
+            {
+              name: 'baz',
+              url: 'https://baz.com/simple',
+              default: false,
+              explicit: false,
+            },
+          ],
+        },
+      },
+    };
+
+    const dependencies = [
+      {
+        depName: 'dep1',
+        packageName: 'dep1',
+      },
+      {
+        depName: 'dep2',
+        packageName: 'dep2',
+      },
+      {
+        depName: 'dep3',
+        packageName: 'dep3',
+      },
+      {
+        depName: 'dep4',
+        packageName: 'dep4',
+      },
+    ];
+
+    const result = processor.process(pyproject, dependencies);
+
+    expect(result).toEqual([
+      {
+        depName: 'dep1',
+        depType: depTypes.uvSources,
+        registryUrls: ['https://foo.com/simple'],
+        packageName: 'dep1',
+      },
+      {
+        depName: 'dep2',
+        depType: depTypes.uvSources,
+        registryUrls: ['https://bar.com/simple'],
+        packageName: 'dep2',
+      },
+      {
+        depName: 'dep3',
+        depType: depTypes.uvSources,
+        packageName: 'dep3',
+        skipReason: 'unknown-registry',
+      },
+      {
+        depName: 'dep4',
+        registryUrls: ['https://baz.com/simple', 'https://pypi.org/pypi/'],
+        packageName: 'dep4',
+      },
+    ]);
+  });
+
+  it('index with optional name', () => {
+    const pyproject = {
+      tool: {
+        uv: {
+          index: [
+            {
+              url: 'https://foo.com/simple',
+              default: true,
+              explicit: false,
+            },
+          ],
+        },
+      },
+    };
+
+    const dependencies = [
+      {
+        depName: 'dep1',
+        packageName: 'dep1',
+      },
+      {
+        depName: 'dep2',
+        packageName: 'dep2',
+      },
+    ];
+
+    const result = processor.process(pyproject, dependencies);
+
+    expect(result).toEqual([
+      {
+        depName: 'dep1',
+        registryUrls: ['https://foo.com/simple'],
+        packageName: 'dep1',
+      },
+      {
+        depName: 'dep2',
+        registryUrls: ['https://foo.com/simple'],
+        packageName: 'dep2',
+      },
+    ]);
+  });
+
+  it('override implicit default index', () => {
+    const pyproject = {
+      tool: {
+        uv: {
+          index: [
+            {
+              name: 'foo',
+              url: 'https://foo.com/simple',
+              default: true,
+              explicit: false,
+            },
+          ],
+        },
+      },
+    };
+
+    const dependencies = [
+      {
+        depName: 'python',
+        packageName: 'python',
+        depType: 'requires-python',
+      },
+      {
+        depName: 'dep1',
+        packageName: 'dep1',
+      },
+      {
+        depName: 'dep2',
+        packageName: 'dep2',
+      },
+    ];
+
+    const result = processor.process(pyproject, dependencies);
+
+    expect(result).toEqual([
+      {
+        depName: 'python',
+        depType: 'requires-python',
+        packageName: 'python',
+      },
+      {
+        depName: 'dep1',
+        registryUrls: ['https://foo.com/simple'],
+        packageName: 'dep1',
+      },
+      {
+        depName: 'dep2',
+        registryUrls: ['https://foo.com/simple'],
+        packageName: 'dep2',
+      },
+    ]);
+  });
+
+  it('override explicit default index', () => {
+    const pyproject = {
+      tool: {
+        uv: {
+          sources: {
+            dep1: { index: 'foo' },
+          },
+          index: [
+            {
+              name: 'foo',
+              url: 'https://foo.com/simple',
+              default: true,
+              explicit: true,
+            },
+          ],
+        },
+      },
+    };
+
+    const dependencies = [
+      {
+        depName: 'dep1',
+        packageName: 'dep1',
+      },
+      {
+        depName: 'dep2',
+        packageName: 'dep2',
+      },
+    ];
+
+    const result = processor.process(pyproject, dependencies);
+
+    expect(result).toEqual([
+      {
+        depName: 'dep1',
+        depType: depTypes.uvSources,
+        registryUrls: ['https://foo.com/simple'],
+        packageName: 'dep1',
+      },
+      {
+        depName: 'dep2',
+        registryUrls: [],
+        packageName: 'dep2',
+      },
+    ]);
+  });
+
   describe('updateArtifacts()', () => {
     it('returns null if there is no lock file', async () => {
       fs.getSiblingFileName.mockReturnValueOnce('uv.lock');
@@ -185,7 +411,16 @@ describe('modules/manager/pep621/processors/uv', () => {
           config: {},
           updatedDeps,
         },
-        {},
+        {
+          project: {
+            'requires-python': '==3.11.1',
+          },
+          tool: {
+            uv: {
+              'required-version': '==0.2.35',
+            },
+          },
+        },
       );
       expect(result).toBeNull();
       expect(execSnapshots).toMatchObject([
@@ -204,9 +439,9 @@ describe('modules/manager/pep621/processors/uv', () => {
             '-w "/tmp/github/some/repo" ' +
             'ghcr.io/containerbase/sidecar ' +
             'bash -l -c "' +
-            'install-tool python 3.11.2 ' +
+            'install-tool python 3.11.1 ' +
             '&& ' +
-            'install-tool uv 0.2.28 ' +
+            'install-tool uv 0.2.35 ' +
             '&& ' +
             'uv lock --upgrade-package dep1' +
             '"',
@@ -256,8 +491,8 @@ describe('modules/manager/pep621/processors/uv', () => {
       const updatedDeps = [
         { packageName: 'dep1', depType: depTypes.dependencies },
         { packageName: 'dep2', depType: depTypes.dependencies },
-        { depName: 'group1/dep3', depType: depTypes.optionalDependencies },
-        { depName: 'group1/dep4', depType: depTypes.optionalDependencies },
+        { depName: 'dep3', depType: depTypes.optionalDependencies },
+        { depName: 'dep4', depType: depTypes.optionalDependencies },
         { depName: 'dep5', depType: depTypes.uvDevDependencies },
         { depName: 'dep6', depType: depTypes.uvDevDependencies },
         { depName: 'dep7', depType: depTypes.buildSystemRequires },
@@ -266,7 +501,9 @@ describe('modules/manager/pep621/processors/uv', () => {
         {
           packageFileName: 'pyproject.toml',
           newPackageFileContent: '',
-          config: {},
+          config: {
+            constraints: {},
+          },
           updatedDeps,
         },
         {},
@@ -295,6 +532,16 @@ describe('modules/manager/pep621/processors/uv', () => {
         username: 'user',
         password: 'pass',
       });
+      hostRules.add({
+        matchHost: 'https://pinned.com/simple',
+        username: 'user',
+        password: 'pass',
+      });
+      googleAuth.mockImplementationOnce(
+        vi.fn().mockImplementationOnce(() => ({
+          getAccessToken: vi.fn().mockResolvedValue('some-token'),
+        })),
+      );
       fs.getSiblingFileName.mockReturnValueOnce('uv.lock');
       fs.readLocalFile.mockResolvedValueOnce('test content');
       fs.readLocalFile.mockResolvedValueOnce('changed test content');
@@ -332,6 +579,231 @@ describe('modules/manager/pep621/processors/uv', () => {
           datasource: GithubTagsDatasource.id,
           registryUrls: ['https://github.com'],
         },
+        {
+          packageName: 'dep5',
+          depType: depTypes.dependencies,
+          datasource: PypiDatasource.id,
+          registryUrls: [
+            'https://someregion-python.pkg.dev/some-project/some-repo/',
+          ],
+        },
+        {
+          packageName: 'dep6',
+          depType: depTypes.dependencies,
+          datasource: PypiDatasource.id,
+          registryUrls: ['https://pinned.com/simple'],
+        },
+        {
+          packageName: 'dep7',
+          depType: depTypes.dependencies,
+          datasource: PypiDatasource.id,
+          registryUrls: ['https://unnamed.com/simple'],
+        },
+      ];
+      const result = await processor.updateArtifacts(
+        {
+          packageFileName: 'pyproject.toml',
+          newPackageFileContent: '',
+          config: {},
+          updatedDeps,
+        },
+        {
+          tool: {
+            uv: {
+              sources: {
+                dep6: { index: 'pinned-index' },
+              },
+              index: [
+                {
+                  name: 'pinned-index',
+                  url: 'https://pinned.com/simple',
+                  default: false,
+                  explicit: true,
+                },
+                {
+                  url: 'https://unnamed.com/simple',
+                  default: false,
+                  explicit: true,
+                },
+              ],
+            },
+          },
+        },
+      );
+      expect(result).toEqual([
+        {
+          file: {
+            contents: 'changed test content',
+            path: 'uv.lock',
+            type: 'addition',
+          },
+        },
+      ]);
+      expect(execSnapshots).toMatchObject([
+        {
+          cmd: 'uv lock --upgrade-package dep1 --upgrade-package dep2 --upgrade-package dep3 --upgrade-package dep4 --upgrade-package dep5 --upgrade-package dep6 --upgrade-package dep7',
+          options: {
+            env: {
+              GIT_CONFIG_COUNT: '6',
+              GIT_CONFIG_KEY_0: 'url.https://user:pass@example.com/.insteadOf',
+              GIT_CONFIG_KEY_1: 'url.https://user:pass@example.com/.insteadOf',
+              GIT_CONFIG_KEY_2: 'url.https://user:pass@example.com/.insteadOf',
+              GIT_CONFIG_VALUE_0: 'ssh://git@example.com/',
+              GIT_CONFIG_VALUE_1: 'git@example.com:',
+              GIT_CONFIG_VALUE_2: 'https://example.com/',
+              UV_EXTRA_INDEX_URL:
+                'https://foobar.com/ https://user:pass@example.com/ https://oauth2accesstoken:some-token@someregion-python.pkg.dev/some-project/some-repo/',
+              UV_INDEX_PINNED_INDEX_USERNAME: 'user',
+              UV_INDEX_PINNED_INDEX_PASSWORD: 'pass',
+            },
+          },
+        },
+      ]);
+    });
+
+    it('dont propagate uv.tool.index into UV_EXTRA_INDEX_URL', async () => {
+      const execSnapshots = mockExecAll();
+      GlobalConfig.set(adminConfig);
+      hostRules.add({
+        matchHost: 'https://example.com',
+        username: 'user',
+        password: 'pass',
+      });
+      hostRules.add({
+        matchHost: 'https://pinned.com/simple',
+        username: 'user',
+        password: 'pass',
+      });
+      hostRules.add({
+        matchHost: 'https://implicit.com/simple',
+        username: 'user',
+        password: 'pass',
+      });
+      googleAuth.mockImplementation(
+        vi.fn().mockImplementation(() => ({
+          getAccessToken: vi.fn().mockResolvedValue(undefined),
+        })),
+      );
+      fs.getSiblingFileName.mockReturnValueOnce('uv.lock');
+      fs.readLocalFile.mockResolvedValueOnce('test content');
+      fs.readLocalFile.mockResolvedValueOnce('changed test content');
+      // python
+      getPkgReleases.mockResolvedValueOnce({
+        releases: [{ version: '3.11.1' }, { version: '3.11.2' }],
+      });
+      // uv
+      getPkgReleases.mockResolvedValueOnce({
+        releases: [{ version: '0.2.35' }, { version: '0.2.28' }],
+      });
+
+      const updatedDeps = [
+        {
+          packageName: 'dep1',
+          depType: depTypes.dependencies,
+          datasource: PypiDatasource.id,
+          registryUrls: ['https://example.com/simple'],
+        },
+        {
+          packageName: 'dep2',
+          depType: depTypes.dependencies,
+          datasource: PypiDatasource.id,
+          registryUrls: ['https://pinned.com/simple'],
+        },
+        {
+          packageName: 'dep3',
+          depType: depTypes.dependencies,
+          datasource: PypiDatasource.id,
+          registryUrls: [
+            'https://implicit.com/simple',
+            'https://pypi.org/pypi/',
+          ],
+        },
+      ];
+      const result = await processor.updateArtifacts(
+        {
+          packageFileName: 'pyproject.toml',
+          newPackageFileContent: '',
+          config: {},
+          updatedDeps,
+        },
+        {
+          tool: {
+            uv: {
+              sources: {
+                dep2: { index: 'pinned-index' },
+              },
+              index: [
+                {
+                  name: 'pinned-index',
+                  url: 'https://pinned.com/simple',
+                  default: false,
+                  explicit: true,
+                },
+                {
+                  name: 'implicit-index',
+                  url: 'https://implicit.com/simple',
+                  default: false,
+                  explicit: false,
+                },
+              ],
+            },
+          },
+        },
+      );
+      expect(result).toEqual([
+        {
+          file: {
+            contents: 'changed test content',
+            path: 'uv.lock',
+            type: 'addition',
+          },
+        },
+      ]);
+      expect(execSnapshots).toMatchObject([
+        {
+          cmd: 'uv lock --upgrade-package dep1 --upgrade-package dep2 --upgrade-package dep3',
+          options: {
+            env: {
+              UV_EXTRA_INDEX_URL: 'https://user:pass@example.com/simple',
+              UV_INDEX_PINNED_INDEX_USERNAME: 'user',
+              UV_INDEX_PINNED_INDEX_PASSWORD: 'pass',
+              UV_INDEX_IMPLICIT_INDEX_USERNAME: 'user',
+              UV_INDEX_IMPLICIT_INDEX_PASSWORD: 'pass',
+            },
+          },
+        },
+      ]);
+    });
+
+    it('continues if Google auth is not configured', async () => {
+      const execSnapshots = mockExecAll();
+      GlobalConfig.set(adminConfig);
+      googleAuth.mockImplementation(
+        vi.fn().mockImplementation(() => ({
+          getAccessToken: vi.fn().mockResolvedValue(undefined),
+        })),
+      );
+      fs.getSiblingFileName.mockReturnValueOnce('uv.lock');
+      fs.readLocalFile.mockResolvedValueOnce('test content');
+      fs.readLocalFile.mockResolvedValueOnce('changed test content');
+      // python
+      getPkgReleases.mockResolvedValueOnce({
+        releases: [{ version: '3.11.1' }, { version: '3.11.2' }],
+      });
+      // uv
+      getPkgReleases.mockResolvedValueOnce({
+        releases: [{ version: '0.2.35' }, { version: '0.2.28' }],
+      });
+
+      const updatedDeps = [
+        {
+          packageName: 'dep',
+          depType: depTypes.dependencies,
+          datasource: PypiDatasource.id,
+          registryUrls: [
+            'https://someregion-python.pkg.dev/some-project/some-repo/simple/',
+          ],
+        },
       ];
       const result = await processor.updateArtifacts(
         {
@@ -353,11 +825,11 @@ describe('modules/manager/pep621/processors/uv', () => {
       ]);
       expect(execSnapshots).toMatchObject([
         {
-          cmd: 'uv lock --upgrade-package dep1 --upgrade-package dep2 --upgrade-package dep3 --upgrade-package dep4',
+          cmd: 'uv lock --upgrade-package dep',
           options: {
             env: {
               UV_EXTRA_INDEX_URL:
-                'https://foobar.com/ https://user:pass@example.com/',
+                'https://someregion-python.pkg.dev/some-project/some-repo/simple/',
             },
           },
         },
@@ -384,7 +856,7 @@ describe('modules/manager/pep621/processors/uv', () => {
           packageFileName: 'folder/pyproject.toml',
           newPackageFileContent: '',
           config: {
-            updateType: 'lockFileMaintenance',
+            isLockFileMaintenance: true,
           },
           updatedDeps: [],
         },

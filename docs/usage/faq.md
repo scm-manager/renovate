@@ -29,36 +29,6 @@ The Renovate team only fixes bugs in an older version if:
 If you're using the Mend Renovate App, you don't need to do anything, as the Renovate maintainers update it regularly.
 If you're self hosting Renovate, use the latest release if possible.
 
-## When is the Mend Renovate App updated with new Renovate versions?
-
-The Renovate maintainers manually update the app.
-The maintainers don't follow any release schedule or release cadence.
-This means the Mend Renovate App can lag a few hours to a week behind the open source version.
-Major releases of Renovate are held back until the maintainers are reasonably certain it works for most users.
-
-## How can I see which version the Mend Renovate app is using?
-
-Follow these steps to see which version the Mend Renovate app is on:
-
-1. Go to the [Mend Developer Portal](https://developer.mend.io/)
-1. Sign in to the Renovate app with your GitHub or Bitbucket account
-1. Select your organization
-1. Select a installed repository
-1. Select a job from the _Recent jobs_ overview
-1. Select the _Info_ Log Level from the dropdown menu
-1. You should see something like this:
-
-   ```
-   INFO: Repository started
-   {
-     "renovateVersion": "38.120.1"
-   }
-   ```
-
-<!-- prettier-ignore -->
-!!! tip
-    The PRs that Renovate creates have a link to the "repository job log" in the footer of the PR body text.
-
 ## Renovate core features not supported on all platforms
 
 | Feature               | Platforms which lack feature                                 | See Renovate issue(s)                                        |
@@ -142,17 +112,17 @@ Read our documentation on the [dependencyDashboardApproval](./configuration-opti
 ### Use an alternative branch as my Pull Request target
 
 Say your repository's default branch is `main` but you want Renovate to use the `next` branch as its PR target.
-You can configure the PR target branch via the `baseBranches` option.
+You can configure the PR target branch via the `baseBranchPatterns` option.
 
 Add this line to the `renovate.json` file that's in the _default_ branch (`main` in this example).
 
 ```json
 {
-  "baseBranches": ["next"]
+  "baseBranchPatterns": ["next"]
 }
 ```
 
-You can set more than one PR target branch in the `baseBranches` array.
+You can set more than one PR target branch in the `baseBranchPatterns` array.
 
 ### Support private npm modules
 
@@ -307,3 +277,39 @@ It can be nice to get patch PRs when you're using automerge:
 - Get weekly updates for minor and major updates
 
 This means you barely notice Renovate during the week, while you still get the benefits of patch level updates.
+
+## What's the difference between `depName` and `packageName`?
+
+Renovate uses two important config options to define a dependency's name: `depName` and `packageName`.
+
+The `depName` is the short "pretty name" of the dependency.
+This is the user-facing name for the dependency.
+By default, Renovate uses the `depName`:
+
+- in the title of Pull Requests/Merge Requests
+- in commit messages
+- on the Dependency Dashboard
+
+The `packageName` is the full _exact_ name.
+Renovate uses the `packageName` to find the dependency in the package registry.
+
+Often `depName` and `packageName` are the same, but not always.
+
+Renovate uses the "pretty" `depName` in branch names and PR titles/content, because the `depName` is easier to read than the `packageName`.
+
+For instance, given the following Gradle plugin:
+
+```kotlin
+plugins {
+    id("com.gradle.develocity").version("3.18.1")
+}
+```
+
+Renovate will give the dependency these properties:
+
+- `depName=com.gradle.develocity`
+- `packageName: com.gradle.develocity:com.gradle.develocity.gradle.plugin`
+
+Again, often the `depName` and `packageName` are equal.
+The names Renovate uses for the `depName` and `packageName` depend on the package manager (and package ecosystem naming conventions).
+For instance, `depName` and `packageName` may be different when you proxy Docker images.

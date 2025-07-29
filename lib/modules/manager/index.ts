@@ -1,4 +1,4 @@
-import type { RangeStrategy } from '../../types';
+import type { MaybePromise, RangeStrategy } from '../../types';
 import managers from './api';
 import { customManagerList, isCustomManager } from './custom';
 import customManagers from './custom/api';
@@ -9,7 +9,6 @@ import type {
   PackageFile,
   PackageFileContent,
   RangeConfig,
-  Result,
 } from './types';
 export { hashMap } from './fingerprint.generated';
 
@@ -65,7 +64,7 @@ export function extractPackageFile(
   content: string,
   fileName: string,
   config: ExtractConfig,
-): Result<PackageFileContent | null> {
+): MaybePromise<PackageFileContent | null> {
   const m = managers.get(manager)! ?? customManagers.get(manager)!;
   if (!m) {
     return null;

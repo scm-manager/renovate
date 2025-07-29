@@ -1,7 +1,7 @@
-import { git, mocked, partial } from '../../../../test/util';
+import { codeBlock } from 'common-tags';
+import { DateTime } from 'luxon';
 import { REPOSITORY_ARCHIVED } from '../../../constants/error-messages';
 import type { BranchStatus } from '../../../types';
-import * as _hostRules from '../../../util/host-rules';
 import { repoFingerprint } from '../util';
 import { client as _client } from './client';
 import type {
@@ -13,9 +13,14 @@ import type {
   GerritProjectInfo,
   GerritRevisionInfo,
 } from './types';
-import { TAG_PULL_REQUEST_BODY, mapGerritChangeToPr } from './utils';
+import {
+  REQUEST_DETAILS_FOR_PRS,
+  TAG_PULL_REQUEST_BODY,
+  mapGerritChangeToPr,
+} from './utils';
 import { writeToConfig } from '.';
 import * as gerrit from '.';
+import { git, hostRules, partial } from '~test/util';
 
 const gerritEndpointUrl = 'https://dev.gerrit.com/renovate';
 
@@ -30,13 +35,20 @@ const codeReviewLabel: GerritLabelTypeInfo = {
   default_value: 0,
 };
 
-jest.mock('../../../util/host-rules');
-jest.mock('../../../util/git');
-jest.mock('./client');
-const clientMock = mocked(_client);
-const hostRules = mocked(_hostRules);
+vi.mock('../../../util/host-rules');
+vi.mock('./client');
+const clientMock = vi.mocked(_client);
 
 describe('modules/platform/gerrit/index', () => {
+  const t0 = DateTime.fromISO('2025-04-14T16:33:37.000000000', {
+    zone: 'utc',
+  }) as DateTime<true>;
+
+  beforeAll(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(t0.toMillis());
+  });
+
   beforeEach(async () => {
     hostRules.find.mockReturnValue({
       username: 'user',
@@ -133,7 +145,16 @@ describe('modules/platform/gerrit/index', () => {
         'test/repo',
         { branchName: '', label: '-2', state: 'open' },
       ]);
-      expect(clientMock.abandonChange.mock.calls).toEqual([[1], [2]]);
+      expect(clientMock.abandonChange.mock.calls).toEqual([
+        [
+          1,
+          'This change has been abandoned as it was voted with Code-Review -2.',
+        ],
+        [
+          2,
+          'This change has been abandoned as it was voted with Code-Review -2.',
+        ],
+      ]);
     });
   });
 
@@ -141,23 +162,39 @@ describe('modules/platform/gerrit/index', () => {
     it('findPr() - no results', async () => {
       clientMock.findChanges.mockResolvedValueOnce([]);
       await expect(
-        gerrit.findPr({ branchName: 'branch', state: 'open' }),
+        gerrit.findPr({
+          branchName: 'branch',
+          state: 'open',
+          targetBranch: 'master',
+        }),
       ).resolves.toBeNull();
-      expect(clientMock.findChanges).toHaveBeenCalledWith(
-        'test/repo',
-        { branchName: 'branch', state: 'open' },
-        undefined,
-      );
+      expect(clientMock.findChanges).toHaveBeenCalledWith('test/repo', {
+        branchName: 'branch',
+        state: 'open',
+        targetBranch: 'master',
+        limit: 1,
+        requestDetails: REQUEST_DETAILS_FOR_PRS,
+      });
     });
 
-    it('findPr() - return the last change from search results', async () => {
-      clientMock.findChanges.mockResolvedValueOnce([
-        partial<GerritChange>({ _number: 1 }),
-        partial<GerritChange>({ _number: 2 }),
-      ]);
+    it('findPr() - found', async () => {
+      const change = partial<GerritChange>({
+        _number: 123456,
+        current_revision: 'some-revision',
+        revisions: {
+          'some-revision': partial<GerritRevisionInfo>({
+            commit_with_footers: 'Renovate-Branch: source',
+          }),
+        },
+      });
+      clientMock.findChanges.mockResolvedValueOnce([change]);
       await expect(
-        gerrit.findPr({ branchName: 'branch', state: 'open' }),
-      ).resolves.toHaveProperty('number', 2);
+        gerrit.findPr({
+          branchName: 'branch',
+          state: 'open',
+          targetBranch: 'master',
+        }),
+      ).resolves.toHaveProperty('number', 123456);
     });
   });
 
@@ -168,7 +205,11 @@ describe('modules/platform/gerrit/index', () => {
       await expect(gerrit.getPr(123456)).resolves.toEqual(
         mapGerritChangeToPr(change),
       );
-      expect(clientMock.getChange).toHaveBeenCalledWith(123456);
+      expect(clientMock.getChange).toHaveBeenCalledWith(
+        123456,
+        undefined,
+        REQUEST_DETAILS_FOR_PRS,
+      );
     });
 
     it('getPr() - not found', async () => {
@@ -187,51 +228,6 @@ describe('modules/platform/gerrit/index', () => {
       gerrit.writeToConfig({ labels: {} });
     });
 
-    it('updatePr() - new prTitle => copy to commit msg', async () => {
-      const oldSubject = 'old title';
-      const oldMessage = `${oldSubject}\n\nsome body\n\nChange-Id: ...`;
-      const change = partial<GerritChange>({
-        subject: oldSubject,
-        current_revision: 'some-revision',
-        revisions: {
-          'some-revision': partial<GerritRevisionInfo>({
-            commit: {
-              message: oldMessage,
-            },
-          }),
-        },
-      });
-      clientMock.getChange.mockResolvedValueOnce(change);
-      await gerrit.updatePr({ number: 123456, prTitle: 'new title' });
-      expect(clientMock.updateChangeSubject).toHaveBeenCalledWith(
-        123456,
-        oldMessage,
-        'new title',
-      );
-    });
-
-    it('updatePr() - auto approve enabled', async () => {
-      const change = partial<GerritChange>({
-        current_revision: 'some-revision',
-        revisions: {
-          'some-revision': partial<GerritRevisionInfo>({
-            commit: {
-              message: 'some message',
-            },
-          }),
-        },
-      });
-      clientMock.getChange.mockResolvedValueOnce(change);
-      await gerrit.updatePr({
-        number: 123456,
-        prTitle: 'subject',
-        platformPrOptions: {
-          autoApprove: true,
-        },
-      });
-      expect(clientMock.approveChange).toHaveBeenCalledWith(123456);
-    });
-
     it('updatePr() - closed => abandon the change', async () => {
       const change = partial<GerritChange>({});
       clientMock.getChange.mockResolvedValueOnce(change);
@@ -248,9 +244,7 @@ describe('modules/platform/gerrit/index', () => {
         current_revision: 'some-revision',
         revisions: {
           'some-revision': partial<GerritRevisionInfo>({
-            commit: {
-              message: 'some message',
-            },
+            commit_with_footers: 'some message',
           }),
         },
       });
@@ -286,7 +280,7 @@ describe('modules/platform/gerrit/index', () => {
     });
   });
 
-  describe('createPr() - error ', () => {
+  describe('createPr()', () => {
     it('createPr() - no existing found => rejects', async () => {
       clientMock.findChanges.mockResolvedValueOnce([]);
       await expect(
@@ -300,39 +294,42 @@ describe('modules/platform/gerrit/index', () => {
         `the change should be created automatically from previous push to refs/for/source`,
       );
     });
-  });
 
-  describe('createPr() - success', () => {
-    beforeAll(() => {
-      gerrit.writeToConfig({ labels: {} });
-    });
-
-    const message = 'some subject\n\nsome body\n\nChange-Id: some-change-id';
-
-    const change = partial<GerritChange>({
-      _number: 123456,
-      current_revision: 'some-revision',
-      revisions: {
-        'some-revision': partial<GerritRevisionInfo>({
-          commit: {
-            message,
-          },
-        }),
-      },
-    });
-
-    beforeEach(() => {
+    it('createPr() - found existing but not created in the last 5 minutes => rejects', async () => {
+      const change = partial<GerritChange>({
+        _number: 123456,
+        created: t0.minus({ minutes: 6 }).toISO().replace('T', ' '),
+        current_revision: 'some-revision',
+        revisions: {
+          'some-revision': partial<GerritRevisionInfo>({
+            commit_with_footers: 'Renovate-Branch: source',
+          }),
+        },
+      });
       clientMock.findChanges.mockResolvedValueOnce([change]);
-      clientMock.getChange.mockResolvedValueOnce(change);
-      clientMock.getMessages.mockResolvedValueOnce([
-        partial<GerritChangeMessageInfo>({
-          tag: TAG_PULL_REQUEST_BODY,
-          message: 'Last PR-Body',
+      await expect(
+        gerrit.createPr({
+          sourceBranch: 'source',
+          targetBranch: 'target',
+          prTitle: 'title',
+          prBody: 'body',
         }),
-      ]);
+      ).rejects.toThrow(/it was not created in the last 5 minutes/);
     });
 
-    it('createPr() - update body/title WITHOUT approve', async () => {
+    it('createPr() - update body', async () => {
+      const change = partial<GerritChange>({
+        _number: 123456,
+        current_revision: 'some-revision',
+        created: t0.minus({ seconds: 30 }).toISO().replace('T', ' '),
+        revisions: {
+          'some-revision': partial<GerritRevisionInfo>({
+            commit_with_footers: 'Renovate-Branch: source',
+          }),
+        },
+        messages: [],
+      });
+      clientMock.findChanges.mockResolvedValueOnce([change]);
       const pr = await gerrit.createPr({
         sourceBranch: 'source',
         targetBranch: 'target',
@@ -347,75 +344,111 @@ describe('modules/platform/gerrit/index', () => {
         123456,
         'body',
         TAG_PULL_REQUEST_BODY,
+        [],
       );
-      expect(clientMock.approveChange).not.toHaveBeenCalled();
-      expect(clientMock.updateChangeSubject).toHaveBeenCalledWith(
-        123456,
-        message,
-        'title',
-      );
-    });
-
-    it('createPr() - update body and approve', async () => {
-      const pr = await gerrit.createPr({
-        sourceBranch: 'source',
-        targetBranch: 'target',
-        prTitle: change.subject,
-        prBody: 'body',
-        platformPrOptions: {
-          autoApprove: true,
-        },
-      });
-      expect(pr).toHaveProperty('number', 123456);
-      expect(clientMock.addMessageIfNotAlreadyExists).toHaveBeenCalledWith(
-        123456,
-        'body',
-        TAG_PULL_REQUEST_BODY,
-      );
-      expect(clientMock.approveChange).toHaveBeenCalledWith(123456);
-      expect(clientMock.setCommitMessage).not.toHaveBeenCalled();
     });
   });
 
   describe('getBranchPr()', () => {
     it('getBranchPr() - no result', async () => {
-      clientMock.findChanges.mockResolvedValue([]);
+      clientMock.findChanges.mockResolvedValueOnce([]);
       await expect(
         gerrit.getBranchPr('renovate/dependency-1.x'),
       ).resolves.toBeNull();
       expect(clientMock.findChanges).toHaveBeenCalledWith('test/repo', {
         branchName: 'renovate/dependency-1.x',
         state: 'open',
+        limit: 1,
+        refreshCache: undefined,
+        requestDetails: REQUEST_DETAILS_FOR_PRS,
       });
     });
 
     it('getBranchPr() - found', async () => {
       const change = partial<GerritChange>({
         _number: 123456,
+        current_revision: 'some-revision',
+        revisions: {
+          'some-revision': partial<GerritRevisionInfo>({
+            commit_with_footers: 'Renovate-Branch: renovate/dependency-1.x',
+          }),
+        },
       });
-      clientMock.findChanges.mockResolvedValue([change]);
+      clientMock.findChanges.mockResolvedValueOnce([change]);
       await expect(
-        gerrit.getBranchPr('renovate/dependency-1.x'),
+        gerrit.getBranchPr('renovate/dependency-1.x', 'master'),
       ).resolves.toHaveProperty('number', 123456);
       expect(clientMock.findChanges.mock.lastCall).toEqual([
         'test/repo',
-        { state: 'open', branchName: 'renovate/dependency-1.x' },
+        {
+          state: 'open',
+          branchName: 'renovate/dependency-1.x',
+          limit: 1,
+          targetBranch: 'master',
+          requestDetails: REQUEST_DETAILS_FOR_PRS,
+        },
       ]);
+    });
+
+    it('getBranchPr() - found even without targetBranch', async () => {
+      const change = partial<GerritChange>({
+        _number: 123456,
+        current_revision: 'some-revision',
+        revisions: {
+          'some-revision': partial<GerritRevisionInfo>({
+            commit_with_footers: 'Renovate-Branch: renovate/dependency-1.x',
+          }),
+        },
+      });
+      clientMock.findChanges.mockResolvedValueOnce([change]);
+      await expect(
+        gerrit.getBranchPr('renovate/dependency-1.x', undefined),
+      ).resolves.toHaveProperty('number', 123456);
+      expect(clientMock.findChanges.mock.lastCall).toEqual([
+        'test/repo',
+        {
+          state: 'open',
+          branchName: 'renovate/dependency-1.x',
+          limit: 1,
+          targetBranch: undefined,
+          requestDetails: REQUEST_DETAILS_FOR_PRS,
+        },
+      ]);
+    });
+  });
+
+  describe('refreshPr()', () => {
+    it('refreshPr()', async () => {
+      clientMock.getChange.mockResolvedValueOnce(partial<GerritChange>({}));
+      await expect(gerrit.refreshPr(123456)).toResolve();
+      expect(clientMock.getChange).toHaveBeenCalledWith(
+        123456,
+        true,
+        REQUEST_DETAILS_FOR_PRS,
+      );
     });
   });
 
   describe('getPrList()', () => {
     it('getPrList() - empty list', async () => {
-      clientMock.findChanges.mockResolvedValue([]);
+      clientMock.findChanges.mockResolvedValueOnce([]);
       await expect(gerrit.getPrList()).resolves.toEqual([]);
       expect(clientMock.findChanges).toHaveBeenCalledWith('test/repo', {
         branchName: '',
+        requestDetails: REQUEST_DETAILS_FOR_PRS,
       });
     });
 
     it('getPrList() - multiple results', async () => {
-      const change = partial<GerritChange>({});
-      clientMock.findChanges.mockResolvedValue([change, change, change]);
+      const change = partial<GerritChange>({
+        current_revision: 'abc',
+        revisions: {
+          abc: partial<GerritRevisionInfo>({
+            commit_with_footers: 'Renovate-Branch: renovate/dependency-1.x',
+          }),
+        },
+      });
+      clientMock.findChanges.mockResolvedValueOnce([change, change, change]);
       await expect(gerrit.getPrList()).resolves.toHaveLength(3);
     });
   });
@@ -446,14 +479,14 @@ describe('modules/platform/gerrit/index', () => {
   });
 
   describe('getBranchStatus()', () => {
-    it('getBranchStatus() - branchname/change not found => yellow', async () => {
+    it('getBranchStatus() - change not found => yellow', async () => {
       clientMock.findChanges.mockResolvedValueOnce([]);
       await expect(
         gerrit.getBranchStatus('renovate/dependency-1.x'),
       ).resolves.toBe('yellow');
     });
 
-    it('getBranchStatus() - branchname/changes found, submittable and not hasProblems => green', async () => {
+    it('getBranchStatus() - change found, submittable and not hasProblems => green', async () => {
       const change = partial<GerritChange>({
         submittable: true,
       });
@@ -463,21 +496,55 @@ describe('modules/platform/gerrit/index', () => {
       ).resolves.toBe('green');
     });
 
-    it('getBranchStatus() - branchname/changes found and hasProblems => red', async () => {
-      const submittableChange = partial<GerritChange>({
+    it('getBranchStatus() - change found, submittable but hasProblems => red', async () => {
+      const change = partial<GerritChange>({
+        submittable: true,
+        problems: [{ message: 'error1' }, { message: 'error2' }],
+        current_revision: 'abc',
+        revisions: {
+          abc: partial<GerritRevisionInfo>({
+            commit_with_footers: 'Renovate-Branch: renovate/dependency-1.x',
+          }),
+        },
+      });
+      clientMock.findChanges.mockResolvedValueOnce([change]);
+      await expect(
+        gerrit.getBranchStatus('renovate/dependency-1.x'),
+      ).resolves.toBe('red');
+    });
+
+    it('getBranchStatus() - change found and hasProblems => red', async () => {
+      const change = partial<GerritChange>({
+        submittable: false,
+        problems: [{ message: 'error1' }, { message: 'error2' }],
+        current_revision: 'abc',
+        revisions: {
+          abc: partial<GerritRevisionInfo>({
+            commit_with_footers: 'Renovate-Branch: renovate/dependency-1.x',
+          }),
+        },
+      });
+      clientMock.findChanges.mockResolvedValueOnce([change]);
+      await expect(
+        gerrit.getBranchStatus('renovate/dependency-1.x'),
+      ).resolves.toBe('red');
+    });
+
+    it('getBranchStatus() - changes found and hasBlockingLabels but no problems => red', async () => {
+      const change = partial<GerritChange>({
         submittable: true,
         problems: [],
+        labels: {
+          Verified: { blocking: true },
+        },
+        current_revision: 'abc',
+        revisions: {
+          abc: partial<GerritRevisionInfo>({
+            commit_with_footers: 'Renovate-Branch: renovate/dependency-1.x',
+          }),
+        },
       });
-      const changeWithProblems = { ...submittableChange };
-      changeWithProblems.submittable = false;
-      changeWithProblems.problems = [
-        { message: 'error1' },
-        { message: 'error2' },
-      ];
-      clientMock.findChanges.mockResolvedValueOnce([
-        changeWithProblems,
-        submittableChange,
-      ]);
+      clientMock.findChanges.mockResolvedValueOnce([change]);
       await expect(
         gerrit.getBranchStatus('renovate/dependency-1.x'),
       ).resolves.toBe('red');
@@ -494,7 +561,7 @@ describe('modules/platform/gerrit/index', () => {
         'unknownCtx',
         'renovate/stability-days',
         'renovate/merge-confidence',
-      ])('getBranchStatusCheck() - %s ', async (ctx) => {
+      ])('getBranchStatusCheck() - %s', async (ctx) => {
         await expect(
           gerrit.getBranchStatusCheck('renovate/dependency-1.x', ctx),
         ).resolves.toBe('yellow');
@@ -525,6 +592,23 @@ describe('modules/platform/gerrit/index', () => {
           labelValue: { approved: partial<GerritAccountInfo>({}) },
           expectedState: 'green' as BranchStatus,
         },
+        {
+          label: 'Renovate-Merge-Confidence',
+          labelValue: {
+            approved: partial<GerritAccountInfo>({}),
+            rejected: partial<GerritAccountInfo>({}),
+          },
+          expectedState: 'red' as BranchStatus,
+        },
+        {
+          label: 'Renovate-Merge-Confidence',
+          labelValue: {
+            approved: partial<GerritAccountInfo>({}),
+            rejected: partial<GerritAccountInfo>({}),
+            blocking: true,
+          },
+          expectedState: 'red' as BranchStatus,
+        },
       ])('$ctx/$labels', async ({ label, labelValue, expectedState }) => {
         const change = partial<GerritChange>({
           labels: {
@@ -540,7 +624,7 @@ describe('modules/platform/gerrit/index', () => {
   });
 
   describe('setBranchStatus()', () => {
-    describe('GerritLabel is not available', () => {
+    describe('GerritLabel is not configured in Renovate', () => {
       beforeEach(() => {
         writeToConfig({ labels: {} });
       });
@@ -566,10 +650,11 @@ describe('modules/platform/gerrit/index', () => {
             description: 'desc',
           }),
         ).resolves.toBeUndefined();
+        expect(clientMock.setLabel).not.toHaveBeenCalled();
       });
     });
 
-    describe('GerritLabel is available', () => {
+    describe('GerritLabel is configured in Renovate', () => {
       beforeEach(() => {
         writeToConfig({
           labels: {
@@ -603,7 +688,21 @@ describe('modules/platform/gerrit/index', () => {
       ])(
         '$ctx/$branchState',
         async ({ ctx, branchState, expectedVote, expectedLabel }) => {
-          const change = partial<GerritChange>({ _number: 123456 });
+          const change = partial<GerritChange>({
+            _number: 123456,
+            current_revision: 'abc',
+            revisions: {
+              abc: partial<GerritRevisionInfo>({
+                commit_with_footers: 'Renovate-Branch: renovate/dependency-1.x',
+              }),
+            },
+            labels: {
+              [ctx]: partial<GerritLabelInfo>({
+                approved: partial<GerritAccountInfo>({}),
+                rejected: partial<GerritAccountInfo>({}),
+              }),
+            },
+          });
           clientMock.findChanges.mockResolvedValueOnce([change]);
           await gerrit.setBranchStatus({
             branchName: 'renovate/dependency-1.x',
@@ -631,6 +730,37 @@ describe('modules/platform/gerrit/index', () => {
         ).resolves.toBeUndefined();
         expect(clientMock.setLabel).not.toHaveBeenCalled();
       });
+
+      it('does not call setLabel() if label does not exist in change', async () => {
+        const change = partial<GerritChange>({
+          _number: 123456,
+          current_revision: 'abc',
+          revisions: {
+            abc: partial<GerritRevisionInfo>({
+              commit_with_footers: 'Renovate-Branch: renovate/dependency-1.x',
+            }),
+          },
+        });
+        clientMock.findChanges.mockResolvedValueOnce([change]);
+        await expect(
+          gerrit.setBranchStatus({
+            branchName: 'branch',
+            context: 'renovate/merge-confidence',
+            state: 'red',
+            description: 'desc',
+          }),
+        ).resolves.toBeUndefined();
+        expect(clientMock.setLabel).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('deleteLabel()', () => {
+    it('deleteLabel() - deletes a label', async () => {
+      const pro = gerrit.deleteLabel(123456, 'hashtag1');
+      await expect(pro).resolves.toBeUndefined();
+      expect(clientMock.deleteHashtag).toHaveBeenCalledTimes(1);
+      expect(clientMock.deleteHashtag).toHaveBeenCalledWith(123456, 'hashtag1');
     });
   });
 
@@ -639,17 +769,11 @@ describe('modules/platform/gerrit/index', () => {
       await expect(
         gerrit.addReviewers(123456, ['user1', 'user2']),
       ).resolves.toBeUndefined();
-      expect(clientMock.addReviewer).toHaveBeenCalledTimes(2);
-      expect(clientMock.addReviewer).toHaveBeenNthCalledWith(
-        1,
-        123456,
+      expect(clientMock.addReviewers).toHaveBeenCalledTimes(1);
+      expect(clientMock.addReviewers).toHaveBeenCalledWith(123456, [
         'user1',
-      );
-      expect(clientMock.addReviewer).toHaveBeenNthCalledWith(
-        2,
-        123456,
         'user2',
-      );
+      ]);
     });
   });
 
@@ -725,18 +849,28 @@ describe('modules/platform/gerrit/index', () => {
       );
     });
 
-    it('getRawFile() - repo/branch defaults', async () => {
+    it('getRawFile() - branch defaults', async () => {
       writeToConfig({
-        repository: undefined,
+        repository: 'repo',
         head: undefined,
         labels: {},
       });
       await expect(gerrit.getRawFile('renovate.json')).resolves.toBe('{}');
       expect(clientMock.getFile).toHaveBeenCalledWith(
-        'All-Projects',
+        'repo',
         'HEAD',
         'renovate.json',
       );
+    });
+
+    it('getRawFile() - no repo', async () => {
+      writeToConfig({
+        repository: undefined,
+        head: 'master',
+        labels: {},
+      });
+      await expect(gerrit.getRawFile('renovate.json')).resolves.toBe(null);
+      expect(clientMock.getFile).not.toHaveBeenCalled();
     });
   });
 
@@ -752,9 +886,33 @@ describe('modules/platform/gerrit/index', () => {
 
   describe('massageMarkdown()', () => {
     it('massageMarkdown()', () => {
-      expect(gerrit.massageMarkdown('Pull Requests')).toBe('Change-Requests');
+      expect(
+        gerrit.massageMarkdown(
+          codeBlock`
+          Pull Request
+          PR
+          Branch creation
+          Disabled because a matching PR was automerged previously
+          Whenever PR becomes conflicted
+          close this Pull Request unmerged
+          Close this PR
+          you tick the rebase/retry checkbox
+          checking the rebase/retry box above
+          `,
+          'rebase',
+        ),
+      ).toBe(codeBlock`
+        change
+        change
+        Change creation
+        Disabled because a matching change was automerged previously
+        Whenever change becomes conflicted
+        abandon or vote this change with Code-Review -2
+        Abandon or vote this change with Code-Review -2
+        you add the _rebase_ hashtag to this change
+        adding the _rebase_ hashtag to this change
+        `);
     });
-    //TODO: add some tests for Gerrit-specific replacements..
   });
 
   describe('currently unused/not-implemented functions', () => {

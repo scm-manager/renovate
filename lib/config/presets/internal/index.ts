@@ -1,8 +1,10 @@
 import type { Preset, PresetConfig } from '../types';
+import * as configAbandonments from './abandonments';
 import * as configPreset from './config';
 import * as customManagersPreset from './custom-managers';
 import * as defaultPreset from './default';
 import * as dockerPreset from './docker';
+import * as globalPreset from './global';
 import * as groupPreset from './group';
 import * as helpersPreset from './helpers';
 import * as mergeConfidence from './merge-confidence';
@@ -18,10 +20,12 @@ import * as workaroundsPreset from './workarounds';
 /* eslint sort-keys: ["error", "asc", {caseSensitive: false, natural: true}] */
 
 export const groups: Record<string, Record<string, Preset>> = {
+  abandonments: configAbandonments.presets,
   config: configPreset.presets,
   customManagers: customManagersPreset.presets,
   default: defaultPreset.presets,
   docker: dockerPreset.presets,
+  global: globalPreset.presets,
   group: groupPreset.presets,
   helpers: helpersPreset.presets,
   mergeConfidence: mergeConfidence.presets,
@@ -39,7 +43,5 @@ export function getPreset({
   repo,
   presetName,
 }: PresetConfig): Preset | undefined {
-  return groups[repo] && presetName
-    ? groups[repo][presetName]
-    : /* istanbul ignore next */ undefined;
+  return groups[repo] && presetName ? groups[repo][presetName] : undefined;
 }

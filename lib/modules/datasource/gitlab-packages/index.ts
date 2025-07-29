@@ -1,5 +1,6 @@
 import { cache } from '../../../util/cache/package/decorator';
 import { GitlabHttp } from '../../../util/http/gitlab';
+import { asTimestamp } from '../../../util/timestamp';
 import { joinUrlParts } from '../../../util/url';
 import { Datasource } from '../datasource';
 import type { GetReleasesConfig, ReleaseResult } from '../types';
@@ -54,7 +55,7 @@ export class GitlabPackagesDatasource extends Datasource {
     registryUrl,
     packageName,
   }: GetReleasesConfig): Promise<ReleaseResult | null> {
-    // istanbul ignore if
+    /* v8 ignore next 3 -- should never happen */
     if (!registryUrl) {
       return null;
     }
@@ -74,16 +75,18 @@ export class GitlabPackagesDatasource extends Datasource {
     let response: GitlabPackage[];
     try {
       response = (
-        await this.http.getJson<GitlabPackage[]>(apiUrl, { paginate: true })
+        await this.http.getJsonUnchecked<GitlabPackage[]>(apiUrl, {
+          paginate: true,
+        })
       ).body;
 
       result.releases = response
         // Setting the package_name option when calling the GitLab API isn't enough to filter information about other packages
         // because this option is only implemented on GitLab > 12.9 and it only does a fuzzy search.
-        .filter((r) => r.name === packagePart)
+        .filter((r) => (r.conan_package_name ?? r.name) === packagePart)
         .map(({ version, created_at }) => ({
           version,
-          releaseTimestamp: created_at,
+          releaseTimestamp: asTimestamp(created_at),
         }));
     } catch (err) {
       this.handleGenericErrors(err);

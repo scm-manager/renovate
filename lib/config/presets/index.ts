@@ -7,7 +7,6 @@ import { logger } from '../../logger';
 import { ExternalHostError } from '../../types/errors/external-host-error';
 import * as memCache from '../../util/cache/memory';
 import * as packageCache from '../../util/cache/package';
-import { getTtlOverride } from '../../util/cache/package/decorator';
 import { clone } from '../../util/clone';
 import { regEx } from '../../util/regex';
 import * as template from '../../util/template';
@@ -17,6 +16,7 @@ import * as migration from '../migration';
 import type { AllConfig, RenovateConfig } from '../types';
 import { mergeChildConfig } from '../utils';
 import { removedPresets } from './common';
+import * as forgejo from './forgejo';
 import * as gitea from './gitea';
 import * as github from './github';
 import * as gitlab from './gitlab';
@@ -24,7 +24,8 @@ import * as http from './http';
 import * as internal from './internal';
 import * as local from './local';
 import * as npm from './npm';
-import type { ParsedPreset, Preset, PresetApi } from './types';
+import { parsePreset } from './parse';
+import type { Preset, PresetApi } from './types';
 import {
   PRESET_DEP_NOT_FOUND,
   PRESET_INVALID,
@@ -35,23 +36,17 @@ import {
 } from './util';
 
 const presetSources: Record<string, PresetApi> = {
-  github,
-  npm,
-  gitlab,
+  forgejo,
   gitea,
-  local,
-  internal,
+  github,
+  gitlab,
   http,
+  internal,
+  local,
+  npm,
 };
 
 const presetCacheNamespace = 'preset';
-
-const nonScopedPresetWithSubdirRegex = regEx(
-  /^(?<repo>~?[\w\-. /]+?)\/\/(?:(?<presetPath>[\w\-./]+)\/)?(?<presetName>[\w\-.]+)(?:#(?<tag>[\w\-./]+?))?$/,
-);
-const gitPresetRegex = regEx(
-  /^(?<repo>~?[\w\-. /]+)(?::(?<presetName>[\w\-.+/]+))?(?:#(?<tag>[\w\-./]+?))?$/,
-);
 
 export function replaceArgs(
   obj: string,
@@ -105,120 +100,6 @@ export function replaceArgs(
   return obj;
 }
 
-export function parsePreset(input: string): ParsedPreset {
-  let str = input;
-  let presetSource: string | undefined;
-  let presetPath: string | undefined;
-  let repo: string;
-  let presetName: string;
-  let tag: string | undefined;
-  let params: string[] | undefined;
-  if (str.startsWith('github>')) {
-    presetSource = 'github';
-    str = str.substring('github>'.length);
-  } else if (str.startsWith('gitlab>')) {
-    presetSource = 'gitlab';
-    str = str.substring('gitlab>'.length);
-  } else if (str.startsWith('gitea>')) {
-    presetSource = 'gitea';
-    str = str.substring('gitea>'.length);
-  } else if (str.startsWith('local>')) {
-    presetSource = 'local';
-    str = str.substring('local>'.length);
-  } else if (str.startsWith('http://') || str.startsWith('https://')) {
-    presetSource = 'http';
-  } else if (
-    !str.startsWith('@') &&
-    !str.startsWith(':') &&
-    str.includes('/')
-  ) {
-    presetSource = 'local';
-  }
-  str = str.replace(regEx(/^npm>/), '');
-  presetSource = presetSource ?? 'npm';
-  if (str.includes('(')) {
-    params = str
-      .slice(str.indexOf('(') + 1, -1)
-      .split(',')
-      .map((elem) => elem.trim());
-    str = str.slice(0, str.indexOf('('));
-  }
-  if (presetSource === 'http') {
-    return { presetSource, repo: str, presetName: '', params };
-  }
-  const presetsPackages = [
-    'compatibility',
-    'config',
-    'customManagers',
-    'default',
-    'docker',
-    'group',
-    'helpers',
-    'mergeConfidence',
-    'monorepo',
-    'npm',
-    'packages',
-    'preview',
-    'replacements',
-    'schedule',
-    'security',
-    'workarounds',
-  ];
-  if (
-    presetsPackages.some((presetPackage) => str.startsWith(`${presetPackage}:`))
-  ) {
-    presetSource = 'internal';
-    [repo, presetName] = str.split(':');
-  } else if (str.startsWith(':')) {
-    // default namespace
-    presetSource = 'internal';
-    repo = 'default';
-    presetName = str.slice(1);
-  } else if (str.startsWith('@')) {
-    // scoped namespace
-    [, repo] = regEx(/(@.*?)(:|$)/).exec(str)!;
-    str = str.slice(repo.length);
-    if (!repo.includes('/')) {
-      repo += '/renovate-config';
-    }
-    if (str === '') {
-      presetName = 'default';
-    } else {
-      presetName = str.slice(1);
-    }
-  } else if (str.includes('//')) {
-    // non-scoped namespace with a subdirectory preset
-
-    // Validation
-    if (str.includes(':')) {
-      throw new Error(PRESET_PROHIBITED_SUBPRESET);
-    }
-    if (!nonScopedPresetWithSubdirRegex.test(str)) {
-      throw new Error(PRESET_INVALID);
-    }
-    ({ repo, presetPath, presetName, tag } =
-      nonScopedPresetWithSubdirRegex.exec(str)!.groups!);
-  } else {
-    ({ repo, presetName, tag } = gitPresetRegex.exec(str)!.groups!);
-
-    if (presetSource === 'npm' && !repo.startsWith('renovate-config-')) {
-      repo = `renovate-config-${repo}`;
-    }
-    if (!is.nonEmptyString(presetName)) {
-      presetName = 'default';
-    }
-  }
-
-  return {
-    presetSource,
-    presetPath,
-    repo,
-    presetName,
-    tag,
-    params,
-  };
-}
-
 export async function getPreset(
   preset: string,
   baseConfig?: RenovateConfig,
@@ -232,7 +113,7 @@ export async function getPreset(
   if (newPreset === null) {
     return {};
   }
-  const { presetSource, repo, presetPath, presetName, tag, params } =
+  const { presetSource, repo, presetPath, presetName, tag, params, rawParams } =
     parsePreset(preset);
   const cacheKey = `preset:${preset}`;
   const presetCachePersistence = GlobalConfig.get(
@@ -256,12 +137,7 @@ export async function getPreset(
       tag,
     });
     if (presetCachePersistence) {
-      await packageCache.set(
-        presetCacheNamespace,
-        cacheKey,
-        presetConfig,
-        getTtlOverride(presetCacheNamespace) ?? 15,
-      );
+      await packageCache.set(presetCacheNamespace, cacheKey, presetConfig, 15);
     } else {
       memCache.set(cacheKey, presetConfig);
     }
@@ -275,11 +151,13 @@ export async function getPreset(
     for (const [index, value] of params.entries()) {
       argMapping[`arg${index}`] = value;
     }
+    if (rawParams) {
+      argMapping.args = rawParams;
+    }
     presetConfig = replaceArgs(presetConfig, argMapping);
   }
   logger.trace({ presetConfig }, `Applied params to preset ${preset}`);
   const presetKeys = Object.keys(presetConfig);
-  // istanbul ignore if
   if (
     presetKeys.length === 2 &&
     presetKeys.includes('description') &&
@@ -332,7 +210,6 @@ export async function resolveConfigPresets(
           ignorePresets,
           existingPresets.concat([preset]),
         );
-        // istanbul ignore if
         if (inputConfig?.ignoreDeps?.length === 0) {
           delete presetConfig.description;
         }
@@ -391,11 +268,9 @@ async function fetchPreset(
     return await getPreset(preset, baseConfig ?? inputConfig);
   } catch (err) {
     logger.debug({ preset, err }, 'Preset fetch error');
-    // istanbul ignore if
     if (err instanceof ExternalHostError) {
       throw err;
     }
-    // istanbul ignore if
     if (err.message === PLATFORM_RATE_LIMIT_EXCEEDED) {
       throw err;
     }
@@ -415,7 +290,6 @@ async function fetchPreset(
     } else {
       error.validationError = `Preset caused unexpected error (${preset})`;
     }
-    // istanbul ignore if
     if (existingPresets.length) {
       error.validationError +=
         '. Note: this is a *nested* preset so please contact the preset author if you are unable to fix it yourself.';
@@ -433,7 +307,6 @@ function shouldResolvePreset(
   existingPresets: string[],
   ignorePresets: string[],
 ): boolean {
-  // istanbul ignore if
   if (existingPresets.includes(preset)) {
     logger.debug(
       `Already seen preset ${preset} in [${existingPresets.join(', ')}]`,
@@ -441,7 +314,6 @@ function shouldResolvePreset(
     return false;
   }
   if (ignorePresets.includes(preset)) {
-    // istanbul ignore next
     logger.debug(
       `Ignoring preset ${preset} in [${existingPresets.join(', ')}]`,
     );

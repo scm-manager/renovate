@@ -4,7 +4,6 @@ import type {
   LegacyAdminConfig,
   RenovateConfig,
   RenovateSharedConfig,
-  UserEnv,
   ValidationMessage,
 } from '../config/types';
 import type { Release } from '../modules/datasource/types';
@@ -19,6 +18,7 @@ import type {
 import type { PlatformPrOptions } from '../modules/platform/types';
 import type { FileChange } from '../util/git/types';
 import type { MergeConfidence } from '../util/merge-confidence/types';
+import type { Timestamp } from '../util/timestamp';
 import type {
   ChangeLogRelease,
   ChangeLogResult,
@@ -41,6 +41,8 @@ export interface BranchUpgradeConfig
   currentDigest?: string;
   currentDigestShort?: string;
   currentValue?: string;
+
+  currentValueTemplate?: string;
   depIndex?: number;
   depTypes?: string[];
 
@@ -65,7 +67,7 @@ export interface BranchUpgradeConfig
   prettyNewMajor?: string;
   prettyNewVersion?: string;
   releases?: ReleaseWithNotes[];
-  releaseTimestamp?: string;
+  releaseTimestamp?: Timestamp;
   repoName?: string;
   minimumConfidence?: MergeConfidence | undefined;
   sourceDirectory?: string;
@@ -77,13 +79,13 @@ export interface BranchUpgradeConfig
 
   hasReleaseNotes?: boolean;
   homepage?: string;
+  changelogContent?: string;
   changelogUrl?: string;
   dependencyUrl?: string;
   sourceUrl?: string;
   sourceRepo?: string;
   sourceRepoOrg?: string;
   sourceRepoName?: string;
-  env?: UserEnv;
 }
 
 export type PrBlockedBy =
@@ -111,6 +113,11 @@ export type BranchResult =
   | 'rebase'
   | 'update-not-scheduled';
 
+export type CacheFingerprintMatchResult =
+  | 'matched'
+  | 'no-match'
+  | 'no-fingerprint';
+
 export interface BranchConfig
   extends BranchUpgradeConfig,
     LegacyAdminConfig,
@@ -122,7 +129,7 @@ export interface BranchConfig
   errors?: ValidationMessage[];
   hasTypes?: boolean;
   dependencyDashboardChecks?: Record<string, string>;
-  releaseTimestamp?: string;
+  releaseTimestamp?: Timestamp;
   forceCommit?: boolean;
   rebaseRequested?: boolean;
   result?: BranchResult;
@@ -133,8 +140,7 @@ export interface BranchConfig
   stopUpdating?: boolean;
   isConflicted?: boolean;
   commitFingerprint?: string;
-  skipBranchUpdate?: boolean;
-  env?: UserEnv;
+  cacheFingerprintMatch?: CacheFingerprintMatchResult;
 }
 
 export interface BranchMetadata {
@@ -163,7 +169,7 @@ export interface BranchSummary {
 export interface WorkerExtractConfig extends ExtractConfig {
   manager: string;
   fileList: string[];
-  fileMatch?: string[];
+  managerFilePatterns?: string[];
   includePaths?: string[];
   ignorePaths?: string[];
   enabled?: boolean;
@@ -187,7 +193,6 @@ export interface UpgradeFingerprintConfig {
   currentVersion?: string;
   datasource?: string;
   depName?: string;
-  env?: UserEnv;
   lockFile?: string;
   lockedVersion?: string;
   manager?: string | null;

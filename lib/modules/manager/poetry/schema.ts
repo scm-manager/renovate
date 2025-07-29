@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { logger } from '../../../logger';
+import { getEnv } from '../../../util/env';
 import { parseGitUrl } from '../../../util/git/url';
 import { regEx } from '../../../util/regex';
 import {
@@ -195,9 +196,9 @@ export const PoetryGroupDependencies = LooseRecord(
     .transform(({ dependencies }) => dependencies),
 ).transform((record) => {
   const deps: PackageDependency[] = [];
-  for (const [groupName, group] of Object.entries(record)) {
-    for (const dep of Object.values(group)) {
-      dep.depType = groupName;
+  for (const [name, val] of Object.entries(record)) {
+    for (const dep of Object.values(val)) {
+      dep.depType = name;
       deps.push(dep);
     }
   }
@@ -225,7 +226,7 @@ export const PoetrySources = LooseArray(PoetrySource, {
   },
 })
   .transform((sources) => {
-    const pypiUrl = process.env.PIP_INDEX_URL ?? 'https://pypi.org/pypi/';
+    const pypiUrl = getEnv().PIP_INDEX_URL ?? 'https://pypi.org/pypi/';
     const result: PoetrySource[] = [];
 
     let overridesPyPi = false;

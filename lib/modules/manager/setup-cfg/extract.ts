@@ -1,10 +1,11 @@
 // based on https://www.python.org/dev/peps/pep-0508/#names
 import { RANGE_PATTERN } from '@renovatebot/pep440';
 import { logger } from '../../../logger';
+import type { MaybePromise } from '../../../types';
 import { newlineRegex, regEx } from '../../../util/regex';
 import { PypiDatasource } from '../../datasource/pypi';
 import { normalizePythonDepName } from '../../datasource/pypi/common';
-import type { PackageDependency, PackageFileContent, Result } from '../types';
+import type { PackageDependency, PackageFileContent } from '../types';
 
 function getSectionName(str: string): string {
   const [, sectionName] = regEx(/^\[\s*([^\s]+)\s*]\s*$/).exec(str) ?? [];
@@ -89,7 +90,7 @@ function parseDep(
 
 export function extractPackageFile(
   content: string,
-): Result<PackageFileContent | null> {
+): MaybePromise<PackageFileContent | null> {
   logger.trace('setup-cfg.extractPackageFile()');
 
   let sectionName: string | null = null;

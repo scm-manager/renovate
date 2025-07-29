@@ -1,19 +1,18 @@
+import type { MaybePromise, Nullish } from '../../types';
 import type { RenovateConfig } from '../types';
 
 // TODO: Proper typing
 export type Preset = RenovateConfig & Record<string, unknown>;
 
-export type PresetConfig = {
+export interface PresetConfig {
   repo: string;
   presetPath?: string | undefined;
   presetName?: string;
   tag?: string | undefined;
-};
+}
 
 export interface PresetApi {
-  getPreset(
-    config: PresetConfig,
-  ): Promise<Preset | null | undefined> | Preset | null | undefined;
+  getPreset(config: PresetConfig): MaybePromise<Nullish<Preset>>;
 }
 
 export interface ParsedPreset {
@@ -23,6 +22,7 @@ export interface ParsedPreset {
   presetName: string;
   tag?: string | undefined;
   params?: string[] | undefined;
+  rawParams?: string | undefined;
 }
 
 export type PresetFetcher = (
@@ -30,13 +30,13 @@ export type PresetFetcher = (
   fileName: string,
   endpoint: string,
   tag?: string,
-) => Promise<Preset | null | undefined>;
+) => Promise<Nullish<Preset>>;
 
-export type FetchPresetConfig = {
+export interface FetchPresetConfig {
   repo: string;
   filePreset: string;
   presetPath?: string | undefined;
   endpoint: string;
   tag?: string | undefined;
   fetch: PresetFetcher;
-};
+}

@@ -1,5 +1,5 @@
 import { GlobalConfig } from '../../../config/global';
-import { applySecretsToConfig } from '../../../config/secrets';
+import { applySecretsAndVariablesToConfig } from '../../../config/secrets';
 import type { RenovateConfig } from '../../../config/types';
 import { logger } from '../../../logger';
 import { setRepositoryLogLevelRemaps } from '../../../logger/remap';
@@ -30,7 +30,8 @@ function warnOnUnsupportedOptions(config: RenovateConfig): void {
     // TODO: types (#22198)
     const platform = GlobalConfig.get('platform')!;
     logger.warn(
-      `Configuration option 'filterUnavailableUsers' is not supported on the current platform '${platform}'.`,
+      { platform },
+      `Configuration option 'filterUnavailableUsers' is not supported on the current platform.`,
     );
   }
 
@@ -38,7 +39,8 @@ function warnOnUnsupportedOptions(config: RenovateConfig): void {
     // TODO: types (#22198)
     const platform = GlobalConfig.get('platform')!;
     logger.warn(
-      `Configuration option 'expandCodeOwnersGroups' is not supported on the current platform '${platform}'.`,
+      { platform },
+      `Configuration option 'expandCodeOwnersGroups' is not supported on the current platform.`,
     );
   }
 }
@@ -62,7 +64,9 @@ export async function initRepo(
   }
   checkIfConfigured(config);
   warnOnUnsupportedOptions(config);
-  config = applySecretsToConfig(config);
+  config = applySecretsAndVariablesToConfig({
+    config,
+  });
   setUserRepoConfig(config);
   config = await detectVulnerabilityAlerts(config);
   // istanbul ignore if
@@ -72,6 +76,6 @@ export async function initRepo(
       'Full resolved config and hostRules including presets',
     );
   }
-  await cloneSubmodules(!!config.cloneSubmodules);
+  await cloneSubmodules(!!config.cloneSubmodules, config.cloneSubmodulesFilter);
   return config;
 }
